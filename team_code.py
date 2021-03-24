@@ -17,8 +17,6 @@ import nbeats_additional_functions_2021 as naf
 import os
 import torch
 from torch import optim
-from config import leads_dict_available
-from config import default_net_params as dnp
 from config import exp_net_params as exp
 from config import epoch_limit
 from config import leads_dict 

@@ -1,31 +1,16 @@
 import os
-import wfdb
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-import pandas
 import torch
 from datetime import date
 import config
 from scipy import stats
 from torch import nn
 from torch.nn import functional as F
-from torch.nn import SmoothL1Loss
-from scipy.spatial.distance import euclidean
-from fastdtw import fastdtw
 
 
-def log_cosh_loss(y_pred, y_true):
-    x = y_true - y_pred
-    return np.sum(np.log(np.cosh(x))) / len(x)
 
-def huber_loss(y_pred, y_true):
-    criterion = SmoothL1Loss()
-    return criterion(y_pred, y_true).item()
-
-def fastdtw_loss(y_pred, y_true):
-    singular_loss, path = fastdtw(y_pred, y_true, dist=euclidean)
-    return singular_loss
 
 today = date.today().strftime("%d%m%Y")
 def plot_scatter(*args, **kwargs):
