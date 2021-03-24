@@ -10,37 +10,15 @@ default_net_params = dict(
 )
 
 
-old_exp_net_params = dict(
-    backcast_length = 1200,
-    forecast_length = 200,
-    batch_size = 64,
-    classes = ['LBBB', 'STD', 'Normal', 'RBBB', 'AF', 'I-AVB', 'STE', 'PAC', 'PVC'],
-    backcast_multiplier = 6,
-    hidden_layer_units=16,
-    nb_blocks_per_stack= 8,
-    thetas_dim=[16,32]
-)
-
-old2_exp_net_params = dict(
-    backcast_length = 1200,
-    forecast_length = 200,
-    batch_size = 128,
-    classes = ['LBBB', 'Normal', 'RBBB', 'AF', 'STE', 'PAC', 'PVC'],
-    backcast_multiplier = 6,
-    hidden_layer_units=64,
-    nb_blocks_per_stack= 8,
-    thetas_dim=[32,64]
-)
-
 exp_net_params = dict(
-    backcast_length = 500,
-    forecast_length = 100,
+    backcast_length = 1500,
+    forecast_length = 500,
     batch_size = 16,
     classes =  ['LBBB', 'STD', 'Normal', 'RBBB', 'AF', 'I-AVB', 'STE', 'PAC', 'PVC'],
     backcast_multiplier = 7,
     hidden_layer_units=16,
-    nb_blocks_per_stack= 4,
-    thetas_dim=[7, 16]
+    nb_blocks_per_stack= 8,
+    thetas_dim=[16, 16]
 )
 
 

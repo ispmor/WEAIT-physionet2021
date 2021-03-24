@@ -118,24 +118,18 @@ def training_code(data_directory, model_directory):
         # Load header and recording.
         header = load_header(header_files[i])
         recording = load_recording(recording_files[i])
-
-        # Get age, sex and root mean square of the leads.
-        age, sex, rms = get_features(header, recording, twelve_leads)
-        data[i, 0:12] = rms
-        data[i, 12] = age
-        data[i, 13] = sex
-        
         recording_full = get_leads_values(header, recording, twelve_leads)
-
         current_labels = get_labels(header)
         for label in current_labels:
             if label in classes:
                 j = classes.index(label)
                 labels[i, j] = 1
-                
-        print(recording_full)
-        print("Attempt to perform training")
-        perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory)
+
+        perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i])
+        
+    
+        
+        
         
         
                 
@@ -151,60 +145,247 @@ def training_code(data_directory, model_directory):
     
     
     # Train 12-lead ECG model.
-    print('Training 12-lead ECG model...')
+
 
     leads = twelve_leads
     filename = os.path.join(model_directory, twelve_lead_model_filename)
 
-    feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
+    feature_indices = [twelve_leads.index(lead) for lead in leads] #+ [12, 13]
     features = data[:, feature_indices]
 
-    imputer = SimpleImputer().fit(features)
-    features = imputer.transform(features)
-    classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
-    save_model(filename, classes, leads, imputer, classifier)
+    #imputer = SimpleImputer().fit(features)
+    #features = imputer.transform(features)
+    #classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
+    print('Savining 12-lead ECG model...')
+    print(filename)
+    save(filename, net, optimizer, classes, leads)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
     # Train 6-lead ECG model.
     print('Training 6-lead ECG model...')
 
     leads = six_leads
     filename = os.path.join(model_directory, six_lead_model_filename)
+    
+    name = six_lead_model_filename
+    
+    experiment = neptune.create_experiment(name=name+ f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}')
 
-    feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
-    features = data[:, feature_indices]
 
-    imputer = SimpleImputer().fit(features)
-    features = imputer.transform(features)
-    classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
-    save_model(filename, classes, leads, imputer, classifier)
+    checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
+    training_checkpoint = name + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
+    
+    #################
+    # Creating a model - will have to somehowe automate it#
+    #################
+    
+    net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
+                forecast_length= forecast_length,
+                thetas_dims=thetas_dim,
+                nb_blocks_per_stack=nb_blocks_per_stack,
+                backcast_length=backcast_length,
+                hidden_layer_units=hidden,
+                share_weights_in_stack=False,
+                device=device)
+    net.cuda()
+    optimizer = optim.Adam(net.parameters())
+
+
+#############################################3
+
+    
+    for i in range(num_recordings):
+        print('    {}/{}...'.format(i+1, num_recordings))
+
+        # Load header and recording.
+        header = load_header(header_files[i])
+        recording = load_recording(recording_files[i])
+        recording_full = get_leads_values(header, recording, six_leads)
+        
+        current_labels = get_labels(header)
+        for label in current_labels:
+            if label in classes:
+                j = classes.index(label)
+                labels[i, j] = 1
+
+        print("Attempt to perform training")
+        
+        perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i])
+
+    #feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
+    #features = data[:, feature_indices]
+    #imputer = SimpleImputer().fit(features)
+    #features = imputer.transform(features)
+    #classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
+    print('Savining 6-lead ECG model...')
+    print(filename)
+    save(filename, net, optimizer, classes, leads)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
     # Train 3-lead ECG model.
     print('Training 3-lead ECG model...')
 
     leads = three_leads
     filename = os.path.join(model_directory, three_lead_model_filename)
+    name = three_lead_model_filename
+    
+    experiment = neptune.create_experiment(name=name+ f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}')
 
-    feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
-    features = data[:, feature_indices]
+    checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
+    training_checkpoint = name + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
+    
+    #################
+    # Creating a model - will have to somehowe automate it#
+    #################
+    
+    net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
+                forecast_length= forecast_length,
+                thetas_dims=thetas_dim,
+                nb_blocks_per_stack=nb_blocks_per_stack,
+                backcast_length=backcast_length,
+                hidden_layer_units=hidden,
+                share_weights_in_stack=False,
+                device=device)
+    net.cuda()
+    optimizer = optim.Adam(net.parameters())
 
-    imputer = SimpleImputer().fit(features)
-    features = imputer.transform(features)
-    classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
-    save_model(filename, classes, leads, imputer, classifier)
+
+#############################################3
+
+    
+    for i in range(num_recordings):
+        print('    {}/{}...'.format(i+1, num_recordings))
+
+        # Load header and recording.
+        header = load_header(header_files[i])
+        recording = load_recording(recording_files[i])
+        recording_full = get_leads_values(header, recording, three_leads)
+        current_labels = get_labels(header)
+        for label in current_labels:
+            if label in classes:
+                j = classes.index(label)
+                labels[i, j] = 1
+
+        print("Attempt to perform training")
+        
+        perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i])
+
+    #feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
+    #features = data[:, feature_indices]
+    #imputer = SimpleImputer().fit(features)
+    #features = imputer.transform(features)
+    #classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
+    print('Savining 3-lead ECG model...')
+    print(filename)
+    save(filename, net, optimizer, classes, leads)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+  
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+   
 
     # Train 2-lead ECG model.
     print('Training 2-lead ECG model...')
 
     leads = two_leads
     filename = os.path.join(model_directory, two_lead_model_filename)
+    name = two_lead_model_filename
+    
+    experiment = neptune.create_experiment(name=name+ f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}')
 
-    feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
-    features = data[:, feature_indices]
+    checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
+    training_checkpoint = name + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
+    
+    #################
+    # Creating a model - will have to somehowe automate it#
+    #################
+    
+    net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
+                forecast_length= forecast_length,
+                thetas_dims=thetas_dim,
+                nb_blocks_per_stack=nb_blocks_per_stack,
+                backcast_length=backcast_length,
+                hidden_layer_units=hidden,
+                share_weights_in_stack=False,
+                device=device)
+    net.cuda()
+    optimizer = optim.Adam(net.parameters())
 
-    imputer = SimpleImputer().fit(features)
-    features = imputer.transform(features)
-    classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
-    save_model(filename, classes, leads, imputer, classifier)
+
+#############################################3
+
+    
+    for i in range(num_recordings):
+        print('    {}/{}...'.format(i+1, num_recordings))
+
+        # Load header and recording.
+        header = load_header(header_files[i])
+        recording = load_recording(recording_files[i])
+        recording_full = get_leads_values(header, recording, two_leads)
+        current_labels = get_labels(header)
+        for label in current_labels:
+            if label in classes:
+                j = classes.index(label)
+                labels[i, j] = 1
+
+        print("Attempt to perform training")
+        
+        perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i])
+
+    #feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
+    #features = data[:, feature_indices]
+    #imputer = SimpleImputer().fit(features)
+    #features = imputer.transform(features)
+    #classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
+    print('Savining 2-lead ECG model...')
+    print(filename)
+    save(filename, net, optimizer, classes, leads)
+    
 
 ################################################################################
 #
@@ -387,17 +568,13 @@ def train_full_grad_steps(data, device, net, optimizer, test_losses, training_ch
 
 
 
-def perform_training(net, optimizer, recordings, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory):
+def perform_training(net, optimizer, recordings, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels):
     test_losses = []
     old_eval = 100
     the_lowest_error = [100]
     old_checkpoint = ""
     
-    data, x_train, y_train, x_test, y_test = naf.one_file_training_data(recordings,
-                                                                                           forecast_length,
-                                                                                           backcast_length,
-                                                                                           batch_size,
-                                                                                           device)
+    data, x_train, y_train, x_test, y_test = naf.get_data_with_labels(recordings,forecast_length, backcast_length, batch_size, device, labels)
     
 
     global_step = train_full_grad_steps(data, device, net, optimizer, test_losses, model_directory + training_checkpoint, x_train.shape[0])
@@ -423,8 +600,7 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
                                      y_test, 
                                      the_lowest_error,
                                      device,
-                                     experiment=experiment,
-                                     plot_eval=True)
+                                     experiment=experiment)
     experiment.log_metric('eval_loss', new_eval)
     
     print("\n New evaluation sccore: %f" % (new_eval))
