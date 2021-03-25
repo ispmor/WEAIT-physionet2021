@@ -19,6 +19,8 @@ class NBeatsNet(nn.Module):
                  share_weights_in_stack=False,
                  hidden_layer_units=256):
         super(NBeatsNet, self).__init__()
+        self.classes = []
+        self.leads = [] 
         self.forecast_length = forecast_length
         self.backcast_length = backcast_length
         self.hidden_layer_units = hidden_layer_units

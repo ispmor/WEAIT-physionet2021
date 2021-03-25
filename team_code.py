@@ -28,6 +28,19 @@ six_lead_model_filename = '6_lead_model.th'
 three_lead_model_filename = '3_lead_model.th'
 two_lead_model_filename = '2_lead_model.th'
 
+forecast_length = exp["forecast_length"]
+batch_size = exp["batch_size"]
+backcast_length = exp["backcast_length"]
+hidden = exp["hidden_layer_units"]
+nb_blocks_per_stack = exp["nb_blocks_per_stack"]
+thetas_dim = exp["thetas_dim"]
+
+
+cuda0 = torch.cuda.set_device(0)
+device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
+torch.pin_memory=False
+
 ################################################################################
 #
 # Training function
@@ -70,20 +83,7 @@ def training_code(data_directory, model_directory):
     
     
     labels = np.zeros((num_recordings, num_classes), dtype=np.bool) # One-hot encoding of classes
-    
-    cuda0 = torch.cuda.set_device(0)
-    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-    torch.set_default_tensor_type('torch.cuda.FloatTensor')
-    torch.pin_memory=False
     neptune.init('puszkarb/physionet2021')
-    
-    
-    forecast_length = exp["forecast_length"]
-    batch_size = exp["batch_size"]
-    backcast_length = exp["backcast_length"]
-    hidden = exp["hidden_layer_units"]
-    nb_blocks_per_stack = exp["nb_blocks_per_stack"]
-    thetas_dim = exp["thetas_dim"]
     
     name = twelve_lead_model_filename
     
@@ -128,25 +128,8 @@ def training_code(data_directory, model_directory):
         perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i])
         
     
-        
-        
-        
-        
-                
-        
-    
-    # Train models.
-    #####################################################################
-    ##                 Thats the place where I should change the code ###
-    #################
-    #read net params#
-    #################
-    
-    
-    
+
     # Train 12-lead ECG model.
-
-
     leads = twelve_leads
     filename = os.path.join(model_directory, twelve_lead_model_filename)
 
@@ -159,21 +142,6 @@ def training_code(data_directory, model_directory):
     print('Savining 12-lead ECG model...')
     print(filename)
     save(filename, net, optimizer, classes, leads)
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     
     
 
@@ -244,10 +212,6 @@ def training_code(data_directory, model_directory):
     
     
     
-    
-    
-    
-    
 
     # Train 3-lead ECG model.
     print('Training 3-lead ECG model...')
@@ -309,21 +273,7 @@ def training_code(data_directory, model_directory):
     
     
     
-    
-    
-    
-    
-    
-  
-    
-    
-    
-    
-    
-    
-    
-    
-    
+ 
     
     
     
@@ -425,7 +375,22 @@ def load_two_lead_model(model_directory):
 
 # Generic function for loading a model.
 def load_model(filename):
-    return joblib.load(filename)
+    model = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
+                forecast_length= forecast_length,
+                thetas_dims=thetas_dim,
+                nb_blocks_per_stack=nb_blocks_per_stack,
+                backcast_length=backcast_length,
+                hidden_layer_units=hidden,
+                share_weights_in_stack=False,
+                device=device)
+    
+    checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.classes = checkpoint['classes']
+    model.leads = checkpoint['leads']
+    model.cuda()
+    print(f'Restored checkpoint from {filename}.')
+    return model
 
 ################################################################################
 #
@@ -451,31 +416,21 @@ def run_two_lead_model(model, header, recording):
 
 # Generic function for running a trained model.
 def run_model(model, header, recording):
-    classes = model['classes']
-    leads = model['leads']
-    imputer = model['imputer']
-    classifier = model['classifier']
+    classes = model.classes
+    leads = model.leads
 
-    # Load features.
-    num_leads = len(leads)
-    data = np.zeros(num_leads+2, dtype=np.float32)
-    age, sex, rms = get_features(header, recording, leads)
-    data[0:num_leads] = rms
-    data[num_leads] = age
-    data[num_leads+1] = sex
+    features = get_leads_values(header, recording, leads)
 
-    # Impute missing data.
-    features = data.reshape(1, -1)
-    features = imputer.transform(features)
-
+    features = naf.one_file_training_data(features, forecast_length, backcast_length, device)
     # Predict labels and probabilities.
-    labels = classifier.predict(features)
-    labels = np.asarray(labels, dtype=np.int)[0]
+    _, probabilities = model(features.clone().detach())
+ 
+    labels = np.asarray(probabilities.detach().cpu().numpy(), dtype=np.int)
 
-    probabilities = classifier.predict_proba(features)
-    probabilities = np.asarray(probabilities, dtype=np.float32)[:, 0, 1]
+    #probabilities = classifier.predict_proba(features)
+    #probabilities = np.asarray(probabilities, dtype=np.float32)[:, 0, 1]
 
-    return classes, labels, probabilities
+    return classes, labels, probabilities.detach().cpu().numpy()
 
 ################################################################################
 #
