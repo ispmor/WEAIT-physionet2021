@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import torch
 from datetime import date
@@ -13,9 +12,9 @@ from torch.nn import functional as F
 
 
 today = date.today().strftime("%d%m%Y")
-def plot_scatter(*args, **kwargs):
-    plt.plot(*args, **kwargs)
-    plt.scatter(*args, **kwargs)
+#def plot_scatter(*args, **kwargs):
+    #plt.plot(*args, **kwargs)
+    #plt.scatter(*args, **kwargs)
 
 
 def data_generator(x, y, batch_size):

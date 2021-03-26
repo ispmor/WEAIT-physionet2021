@@ -5,11 +5,11 @@
 
 from helper_code import *
 import numpy as np, os, sys, joblib
-from sklearn.impute import SimpleImputer
-from sklearn.ensemble import RandomForestClassifier
 
 
-import neptune
+
+####
+from torch.utils.tensorboard import SummaryWriter
 from nbeats_pytorch.model import NBeatsNet
 from torch.nn import functional as F
 from torch import nn
@@ -40,6 +40,8 @@ cuda0 = torch.cuda.set_device(0)
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 torch.pin_memory=False
+
+
 
 ################################################################################
 #
@@ -87,7 +89,8 @@ def training_code(data_directory, model_directory):
     
     name = twelve_lead_model_filename
     
-    experiment = neptune.create_experiment(name=name+ f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}')
+    #experiment = neptune.create_experiment(name=name+ f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}')
+    experiment = SummaryWriter()
 
 
     checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
@@ -153,7 +156,6 @@ def training_code(data_directory, model_directory):
     
     name = six_lead_model_filename
     
-    experiment = neptune.create_experiment(name=name+ f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}')
 
 
     checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
@@ -220,7 +222,6 @@ def training_code(data_directory, model_directory):
     filename = os.path.join(model_directory, three_lead_model_filename)
     name = three_lead_model_filename
     
-    experiment = neptune.create_experiment(name=name+ f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}')
 
     checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
     training_checkpoint = name + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
@@ -286,7 +287,6 @@ def training_code(data_directory, model_directory):
     filename = os.path.join(model_directory, two_lead_model_filename)
     name = two_lead_model_filename
     
-    experiment = neptune.create_experiment(name=name+ f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}')
 
     checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
     training_checkpoint = name + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
@@ -544,7 +544,7 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
                                        device,
                                        experiment=experiment)
                                                                                                   
-    experiment.log_metric('train_loss', train_eval)
+    experiment.add_scalar(f'train_loss_{training_checkpoint}', train_eval)
 
 
     new_eval = naf.evaluate_training(backcast_length,
@@ -556,7 +556,7 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
                                      the_lowest_error,
                                      device,
                                      experiment=experiment)
-    experiment.log_metric('eval_loss', new_eval)
+    experiment.add_scalar(f'eval_loss_{training_checkpoint}', new_eval)
     
     print("\n New evaluation sccore: %f" % (new_eval))
     if new_eval < old_eval:

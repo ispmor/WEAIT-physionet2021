@@ -1,7 +1,7 @@
 FROM python:3.8.6-slim
 
 ## The MAINTAINER instruction sets the author field of the generated images.
-MAINTAINER author@example.com
+MAINTAINER puszkarski.bartosz@gmail.com
 
 ## DO NOT EDIT the 3 lines.
 RUN mkdir /physionet
