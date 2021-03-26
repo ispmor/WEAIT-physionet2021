@@ -85,7 +85,7 @@ def training_code(data_directory, model_directory):
     
     
     labels = np.zeros((num_recordings, num_classes), dtype=np.bool) # One-hot encoding of classes
-    neptune.init('puszkarb/physionet2021')
+    #neptune.init('puszkarb/physionet2021')
     
     name = twelve_lead_model_filename
     
