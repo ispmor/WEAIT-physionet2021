@@ -1,4 +1,4 @@
-FROM python:3.8.6-slim
+FROM pytorch/pytorch:1.7.1-cuda11.0-cudnn8-devel
 
 ## The MAINTAINER instruction sets the author field of the generated images.
 MAINTAINER puszkarski.bartosz@gmail.com
