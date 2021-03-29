@@ -107,13 +107,15 @@ def training_code(data_directory, model_directory):
                 backcast_length=backcast_length,
                 hidden_layer_units=hidden,
                 share_weights_in_stack=False,
-                device=device)
+                device=device,
+                classes=classes)
     net.cuda()
     optimizer = optim.Adam(net.parameters())
 
 
 #############################################3
 
+    old_eval = 100
     
     for i in range(num_recordings):
         print('    {}/{}...'.format(i+1, num_recordings))
@@ -128,7 +130,9 @@ def training_code(data_directory, model_directory):
                 j = classes.index(label)
                 labels[i, j] = 1
 
-        perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i])
+        new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
+        if new_eval < old_eval:
+            old_eval = new_eval
         
     
 
@@ -172,13 +176,15 @@ def training_code(data_directory, model_directory):
                 backcast_length=backcast_length,
                 hidden_layer_units=hidden,
                 share_weights_in_stack=False,
-                device=device)
+                device=device,
+                classes=classes)
     net.cuda()
     optimizer = optim.Adam(net.parameters())
 
 
 #############################################3
 
+    old_eval = 100
     
     for i in range(num_recordings):
         print('    {}/{}...'.format(i+1, num_recordings))
@@ -196,7 +202,9 @@ def training_code(data_directory, model_directory):
 
         print("Attempt to perform training")
         
-        perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i])
+        new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
+        if new_eval < old_eval:
+            old_eval = new_eval
 
     #feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
     #features = data[:, feature_indices]
@@ -237,13 +245,15 @@ def training_code(data_directory, model_directory):
                 backcast_length=backcast_length,
                 hidden_layer_units=hidden,
                 share_weights_in_stack=False,
-                device=device)
+                device=device,
+                classes=classes)
     net.cuda()
     optimizer = optim.Adam(net.parameters())
 
 
 #############################################3
 
+    old_eval = 100
     
     for i in range(num_recordings):
         print('    {}/{}...'.format(i+1, num_recordings))
@@ -260,7 +270,9 @@ def training_code(data_directory, model_directory):
 
         print("Attempt to perform training")
         
-        perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i])
+        new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
+        if new_eval < old_eval:
+            old_eval = new_eval
 
     #feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
     #features = data[:, feature_indices]
@@ -302,14 +314,15 @@ def training_code(data_directory, model_directory):
                 backcast_length=backcast_length,
                 hidden_layer_units=hidden,
                 share_weights_in_stack=False,
-                device=device)
+                device=device,
+                classes=classes)
     net.cuda()
     optimizer = optim.Adam(net.parameters())
 
 
 #############################################3
 
-    
+    old_eval = 100
     for i in range(num_recordings):
         print('    {}/{}...'.format(i+1, num_recordings))
 
@@ -325,7 +338,9 @@ def training_code(data_directory, model_directory):
 
         print("Attempt to perform training")
         
-        perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i])
+        new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
+        if new_eval < old_eval:
+            old_eval = new_eval
 
     #feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
     #features = data[:, feature_indices]
@@ -375,6 +390,8 @@ def load_two_lead_model(model_directory):
 
 # Generic function for loading a model.
 def load_model(filename):
+    checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
+
     model = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
                 forecast_length= forecast_length,
                 thetas_dims=thetas_dim,
@@ -382,11 +399,10 @@ def load_model(filename):
                 backcast_length=backcast_length,
                 hidden_layer_units=hidden,
                 share_weights_in_stack=False,
-                device=device)
+                device=device,
+                classes=checkpoint['classes'])
     
-    checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
     model.load_state_dict(checkpoint['model_state_dict'])
-    model.classes = checkpoint['classes']
     model.leads = checkpoint['leads']
     model.cuda()
     print(f'Restored checkpoint from {filename}.')
@@ -510,7 +526,8 @@ def train_full_grad_steps(data, device, net, optimizer, test_losses, training_ch
         net.train()
         _, forecast = net(x_train_batch.clone().detach())#.to(device)) #Dodaje od 
         m = nn.BCEWithLogitsLoss()
-        loss = m(forecast, torch.zeros(size=(16,)))
+
+        loss = m(forecast, y_train_batch[0])#torch.zeros(size=(16,)))
         #loss = F.mse_loss(forecast, y_train_batch.clone().detach())#.to(device))
         loss.backward()
         optimizer.step()
@@ -523,11 +540,10 @@ def train_full_grad_steps(data, device, net, optimizer, test_losses, training_ch
 
 
 
-def perform_training(net, optimizer, recordings, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels):
+def perform_training(net, optimizer, recordings, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels, old_eval):
     test_losses = []
-    old_eval = 100
     the_lowest_error = [100]
-    old_checkpoint = ""
+
     
     data, x_train, y_train, x_test, y_test = naf.get_data_with_labels(recordings,forecast_length, backcast_length, batch_size, device, labels)
     
@@ -558,15 +574,15 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
                                      experiment=experiment)
     experiment.add_scalar(f'eval_loss_{training_checkpoint}', new_eval)
     
-    print("\n New evaluation sccore: %f" % (new_eval))
-    if new_eval < old_eval:
-        difference = old_eval - new_eval
-        old_eval = new_eval
-        with torch.no_grad():
-            if old_checkpoint:
-                print("there is a checkpoint!" + old_checkpoint)
-                os.remove(old_checkpoint)
-            new_checkpoint_name = training_checkpoint
-            print(model_directory + new_checkpoint_name)
-            naf.save(model_directory + new_checkpoint_name, net, optimizer, global_step)
-            old_checkpoint = new_checkpoint_name
+    print("\n New evaluation sccore: %f, ---->>>> old score: %f" % (new_eval, old_eval))
+    #if new_eval < old_eval:
+    #    print("in if")
+    #    difference = old_eval - new_eval
+    #    old_eval = new_eval
+    #    with torch.no_grad():
+    #        if training_checkpoint:
+    #            print("there is a checkpoint!" + training_checkpoint)
+    #            os.remove(training_checkpoint)
+    #        print(model_directory + training_checkpoint)
+    #        naf.save(model_directory + training_checkpoint, net, optimizer, global_step)
+    return new_eval

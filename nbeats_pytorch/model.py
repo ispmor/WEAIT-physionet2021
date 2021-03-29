@@ -17,9 +17,10 @@ class NBeatsNet(nn.Module):
                  backcast_length=10,
                  thetas_dims=(4, 8),
                  share_weights_in_stack=False,
-                 hidden_layer_units=256):
+                 hidden_layer_units=256, 
+                 classes = []):
         super(NBeatsNet, self).__init__()
-        self.classes = []
+        self.classes = classes
         self.leads = [] 
         self.forecast_length = forecast_length
         self.backcast_length = backcast_length
@@ -47,7 +48,7 @@ class NBeatsNet(nn.Module):
                 block = blocks[-1]  # pick up the last one when we share weights.
             else:
                 block = block_init(self.hidden_layer_units, self.thetas_dim[stack_id],
-                                   self.device, self.backcast_length, self.forecast_length)
+                                   self.device, self.backcast_length, self.forecast_length, classes=len(self.classes))
                 self.parameters.extend(block.parameters())
             print(f'     | -- {block}')
             blocks.append(block)
@@ -63,7 +64,7 @@ class NBeatsNet(nn.Module):
             return GenericBlock
 
     def forward(self, backcast):
-        forecast = torch.zeros(size=(16,)) #(size=(backcast.size()[0], backcast.size()[1], 16,))#self.forecast_length,))  # maybe batch size here. ZMIENIANE!!!
+        forecast = torch.zeros(size=(len(self.classes),)) #(size=(backcast.size()[0], backcast.size()[1], 16,))#self.forecast_length,))  # maybe batch size here. ZMIENIANE!!!
         for stack_id in range(len(self.stacks)):
             for block_id in range(len(self.stacks[stack_id])):
                 b, f = self.stacks[stack_id][block_id](backcast)
@@ -98,7 +99,7 @@ def linspace(backcast_length, forecast_length):
 
 class Block(nn.Module):
 
-    def __init__(self, units, thetas_dim, device, backcast_length=10, forecast_length=5, share_thetas=False):
+    def __init__(self, units, thetas_dim, device, backcast_length=10, forecast_length=5, share_thetas=False, classes=16):
         super(Block, self).__init__()
         self.units = units
         self.thetas_dim = thetas_dim
@@ -111,6 +112,8 @@ class Block(nn.Module):
         self.fc4 = nn.Linear(units, units)
         self.device = device
         self.backcast_linspace, self.forecast_linspace = linspace(backcast_length, forecast_length)
+        self.classes = classes
+        
         if share_thetas:
             self.theta_f_fc = self.theta_b_fc = nn.Linear(units, thetas_dim)
         else:
@@ -159,11 +162,12 @@ class TrendBlock(Block):
 
 class GenericBlock(Block):
 
-    def __init__(self, units, thetas_dim, device, backcast_length=10, forecast_length=5):
-        super(GenericBlock, self).__init__(units, thetas_dim, device, backcast_length, forecast_length)
+    def __init__(self, units, thetas_dim, device, backcast_length=10, forecast_length=5, classes=16):
+        super(GenericBlock, self).__init__(units, thetas_dim, device, backcast_length, forecast_length, classes=classes)
 
         self.backcast_fc = nn.Linear(thetas_dim, backcast_length)
-        self.forecast_fc = nn.Linear(thetas_dim, 16)#forecast_length)
+        self.forecast_fc = nn.Linear(thetas_dim, self.classes)#forecast_length)
+        self.lstm = nn.LSTM(self.forecast_length, 20, 4)
 
     def forward(self, x):
         # no constraint for generic arch.
@@ -175,13 +179,19 @@ class GenericBlock(Block):
         backcast = self.backcast_fc(theta_b)  # generic. 3.3.
         forecast = self.forecast_fc(theta_f)  # generic. 3.3.
 
+
         forec = torch.sum(forecast, 1) ### DODANE
+        
         f = torch.sum(forec, -2)
         
+     
+        
         m = torch.nn.Softmax(dim=0)
-        forecast = m(f)
+        f = m(f)
+        
         
         ## KONIEC DODANIA
         
+        forecast = f 
 
         return backcast, forecast
