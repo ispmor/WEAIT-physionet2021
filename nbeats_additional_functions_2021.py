@@ -68,15 +68,21 @@ def get_data_with_labels(recording, forecast_length, backcast_length, batch_size
     if len(recording[0]) > 7500:
         recording = recording[:, 0:7500]
     
-    for i in range(backcast_length, len(recording[0]) - backcast_length , forecast_length): # tutaj jest problem, w którym chce obniżyć ilość batchy wykorzystywanych z pliku, celem przyspieszeniea treningu
-        x_train_batch.append(recording[:, i - backcast_length:i])
-        y.append(labels)
-
+    if len(recording[0]) - backcast_length > backcast_length:
+        for i in range(backcast_length, len(recording[0]) - backcast_length , forecast_length): # tutaj jest problem, w którym chce obniżyć ilość batchy wykorzystywanych z pliku, celem przyspieszeniea treningu
+            x_train_batch.append(recording[:, i - backcast_length:i])
+            y.append(labels)
+    else:
+        for i in range(4):
+            x_train_batch.append(recording[:, 0:backcast_length])
+            y.append(labels)
+        
     x_train_batch = torch.tensor(x_train_batch, device=cuda, dtype=torch.float)  # [..., 0]
     y = torch.tensor(y, device=cuda,  dtype=torch.float)  # [..., 0]
     
+  
 
-    x_train, x_test, y_train, y_test = train_test_split(x_train_batch, y, test_size=0.2, random_state=17)
+    x_train, x_test, y_train, y_test = train_test_split(x_train_batch, y, test_size=0.2, train_size=0.8, random_state=17)
     data = data_generator(x_train, y_train, batch_size)
 
     return data,x_train, y_train, x_test, y_test
@@ -123,9 +129,13 @@ def one_file_training_data(recording, forecast_length, backcast_length, cuda):
     x= []
     if len(recording[0]) > 7500:
         recording = recording[:, 0:7500]
-    
-    for i in range(backcast_length, len(recording[0]) - backcast_length , forecast_length):
-        x.append(recording[:, i - backcast_length:i])
+    if len(recording[0]) - backcast_length > backcast_length:
+        for i in range(backcast_length, len(recording[0]) - backcast_length , forecast_length):
+            x.append(recording[:, i - backcast_length:i])
+    else:
+        for i in range(4):
+            x.append(recording[:, 0:backcast_length])
+        
 
     x = torch.tensor(x, device=cuda, dtype=torch.float)  # [..., 0]
 
