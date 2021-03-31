@@ -36,7 +36,9 @@ class NBeatsNet(nn.Module):
         for stack_id in range(len(self.stack_types)):
             self.stacks.append(self.create_stack(stack_id))
         self.parameters = nn.ParameterList(self.parameters)
+        self.softmax = nn.Softmax(dim=0)
         self.to(self.device)
+        
 
     def create_stack(self, stack_id):
         stack_type = self.stack_types[stack_id]
@@ -70,6 +72,7 @@ class NBeatsNet(nn.Module):
                 b, f = self.stacks[stack_id][block_id](backcast)
                 backcast = backcast.to(self.device) - b
                 forecast = forecast.to(self.device) + f
+        forecast = self.softmax(forecast)
         return backcast, forecast
 
 
@@ -188,7 +191,6 @@ class GenericBlock(Block):
         
         m = torch.nn.Softmax(dim=0)
         f = m(f)
-        
         
         ## KONIEC DODANIA
         
