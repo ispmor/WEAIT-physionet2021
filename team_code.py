@@ -125,6 +125,11 @@ def training_code(data_directory, model_directory):
         recording = load_recording(recording_files[i])
         recording_full = get_leads_values(header, recording, twelve_leads)
         current_labels = get_labels(header)
+        freq = get_frequency(header)
+        if freq != float(500):
+            recording_full = naf.equalize_signal_frequency(freq, recording_full)
+            
+            
         for label in current_labels:
             if label in classes:
                 j = classes.index(label)
@@ -193,7 +198,9 @@ def training_code(data_directory, model_directory):
         header = load_header(header_files[i])
         recording = load_recording(recording_files[i])
         recording_full = get_leads_values(header, recording, six_leads)
-        
+        freq = get_frequency(header)
+        if freq != float(500):
+            recording_full = naf.equalize_signal_frequency(freq, recording_full)
         current_labels = get_labels(header)
         for label in current_labels:
             if label in classes:
@@ -263,6 +270,9 @@ def training_code(data_directory, model_directory):
         recording = load_recording(recording_files[i])
         recording_full = get_leads_values(header, recording, three_leads)
         current_labels = get_labels(header)
+        freq = get_frequency(header)
+        if freq != float(500):
+            recording_full = naf.equalize_signal_frequency(freq, recording_full)
         for label in current_labels:
             if label in classes:
                 j = classes.index(label)
@@ -331,6 +341,9 @@ def training_code(data_directory, model_directory):
         recording = load_recording(recording_files[i])
         recording_full = get_leads_values(header, recording, two_leads)
         current_labels = get_labels(header)
+        freq = get_frequency(header)
+        if freq != float(500):
+            recording_full = naf.equalize_signal_frequency(freq, recording_full)
         for label in current_labels:
             if label in classes:
                 j = classes.index(label)

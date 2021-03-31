@@ -7,7 +7,7 @@ import config
 from scipy import stats
 from torch import nn
 from torch.nn import functional as F
-
+#import matplotlib.pyplot as plt
 
 
 
@@ -142,3 +142,38 @@ def one_file_training_data(recording, forecast_length, backcast_length, cuda):
 
     return x
 
+
+
+def equalize_signal_frequency(freq, recording_full):
+    new_recording_full = []
+    
+    if freq == float(257):
+        xp = [i * 1.9455 for i in range(recording_full.shape[1])]
+        x = np.linspace(0, 30*60*500,  30*60*500)
+        for lead in recording_full:
+            new_lead = np.interp(x, xp, lead)
+            new_recording_full.append(new_lead)
+        new_recording_full = np.array(new_recording_full)
+        #fig = plt.figure(1, figsize=(12, 10))
+        #plt.grid()
+        #plot_scatter(xp[0:1000], recording_full[0][0:1000], color='b')
+        #plot_scatter(x[0:2000], new_recording_full[0][0:2000], color='g')
+        #plt.savefig("/home/puszkar/signal.png")
+        #plt.close()
+                                
+    if freq == float(1000):
+        x_base = list(range(len(recording_full[0])))
+        x_shortened = x_base[::2]
+        new_recording_full = recording_full[:,::2]
+
+        #fig = plt.figure(1, figsize=(12, 10))
+        #plt.grid()
+        #plot_scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
+        #plot_scatter(x_shortened[0:1000], new_recording_full[0][0:1000], color='g')
+        #plt.savefig("/home/puszkar/signal.png")
+        #plt.close()
+            
+
+    return new_recording_full
+            
+    
