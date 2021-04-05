@@ -11,13 +11,13 @@ default_net_params = dict(
 
 
 exp_net_params = dict(
-    backcast_length = 1500,
+    backcast_length = 500,
     forecast_length = 500,
     batch_size = 16,
     classes =  ['LBBB', 'STD', 'Normal', 'RBBB', 'AF', 'I-AVB', 'STE', 'PAC', 'PVC'],
     backcast_multiplier = 7,
-    hidden_layer_units=16,
-    nb_blocks_per_stack= 8,
+    hidden_layer_units=500,
+    nb_blocks_per_stack= 1,
     thetas_dim=[16, 16]
 )
 

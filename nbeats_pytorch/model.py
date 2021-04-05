@@ -72,7 +72,6 @@ class NBeatsNet(nn.Module):
                 b, f = self.stacks[stack_id][block_id](backcast)
                 backcast = backcast.to(self.device) - b
                 forecast = forecast.to(self.device) + f
-        forecast = self.softmax(forecast)
         return backcast, forecast
 
 
@@ -124,10 +123,11 @@ class Block(nn.Module):
             self.theta_f_fc = nn.Linear(units, thetas_dim)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x.to(self.device)))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        x = F.relu(self.fc4(x))
+        #x = F.relu(self.fc1(x.to(self.device)))
+        
+        #x = F.relu(self.fc2(x))
+        #x = F.relu(self.fc3(x))
+        #x = F.relu(self.fc4(x))
         return x
 
     def __str__(self):
@@ -168,29 +168,54 @@ class GenericBlock(Block):
     def __init__(self, units, thetas_dim, device, backcast_length=10, forecast_length=5, classes=16):
         super(GenericBlock, self).__init__(units, thetas_dim, device, backcast_length, forecast_length, classes=classes)
 
+        hidden_dim = 512
+        layer_dim = 8
+        
+        
         self.backcast_fc = nn.Linear(thetas_dim, backcast_length)
         self.forecast_fc = nn.Linear(thetas_dim, self.classes)#forecast_length)
-        self.lstm = nn.LSTM(self.forecast_length, 20, 4)
+        self.fc = nn.Linear(hidden_dim, classes)
+        self.lstm = nn.LSTM(self.forecast_length, hidden_dim, layer_dim)
+        #LSTMClassifier(input_dim, hidden_dim, layer_dim, output_dim)
+        self.batch_size = None
+        self.hidden = None
+        self.hidden_dim = hidden_dim
+        self.layer_dim = layer_dim
+    
+    def init_hidden(self, x):
+        h0 = torch.zeros(self.layer_dim, x.size(1), self.hidden_dim)
+        c0 = torch.zeros(self.layer_dim, x.size(1), self.hidden_dim)
+        return [t.cuda() for t in (h0, c0)]
 
     def forward(self, x):
         # no constraint for generic arch.
         x = super(GenericBlock, self).forward(x)
+        print(x.shape)
 
         theta_b = F.relu(self.theta_b_fc(x))
-        theta_f = F.relu(self.theta_f_fc(x)) #tutaj masz thetas_dim rozmiar 
+        #theta_f = F.relu(self.theta_f_fc(x)) #tutaj masz thetas_dim rozmiar 
 
         backcast = self.backcast_fc(theta_b)  # generic. 3.3.
-        forecast = self.forecast_fc(theta_f)  # generic. 3.3.
+        #forecast = self.forecast_fc(theta_f)  # generic. 3.3.
 
 
-        forec = torch.sum(forecast, 1) ### DODANE
+        #forec = torch.sum(forecast, 1) ### DODANE
+       # print(forecast.shape)
         
-        f = torch.sum(forec, -2)
+        #f = torch.sum(forec, -2)
+
+        
+        h0, c0 = self.init_hidden(x)
+
+        out, (hn, cn) = self.lstm(x, (h0, c0))
+        out = self.fc(out[:, -1, :])
         
      
+        forec = torch.sum(out, 0)
+        #f = torch.sum(forec, -2)
         
         m = torch.nn.Softmax(dim=0)
-        f = m(f)
+        f = m(forec)
         
         ## KONIEC DODANIA
         
