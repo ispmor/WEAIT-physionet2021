@@ -72,6 +72,8 @@ class NBeatsNet(nn.Module):
                 b, f = self.stacks[stack_id][block_id](backcast)
                 backcast = backcast.to(self.device) - b
                 forecast = forecast.to(self.device) + f
+        m = torch.nn.Softmax(dim=0)
+        forecast = m(forecast)
         return backcast, forecast
 
 
@@ -123,11 +125,11 @@ class Block(nn.Module):
             self.theta_f_fc = nn.Linear(units, thetas_dim)
 
     def forward(self, x):
-        #x = F.relu(self.fc1(x.to(self.device)))
+        x = F.relu(self.fc1(x.to(self.device)))
         
-        #x = F.relu(self.fc2(x))
-        #x = F.relu(self.fc3(x))
-        #x = F.relu(self.fc4(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.fc4(x))
         return x
 
     def __str__(self):
@@ -190,32 +192,31 @@ class GenericBlock(Block):
     def forward(self, x):
         # no constraint for generic arch.
         x = super(GenericBlock, self).forward(x)
-        print(x.shape)
+        #print(x.shape)
 
         theta_b = F.relu(self.theta_b_fc(x))
-        #theta_f = F.relu(self.theta_f_fc(x)) #tutaj masz thetas_dim rozmiar 
+        theta_f = F.relu(self.theta_f_fc(x)) #tutaj masz thetas_dim rozmiar 
 
         backcast = self.backcast_fc(theta_b)  # generic. 3.3.
-        #forecast = self.forecast_fc(theta_f)  # generic. 3.3.
+        forecast = self.forecast_fc(theta_f)  # generic. 3.3.
 
 
-        #forec = torch.sum(forecast, 1) ### DODANE
+        forec = torch.sum(forecast, 1) ### DODANE
        # print(forecast.shape)
         
-        #f = torch.sum(forec, -2)
+        f = torch.sum(forec, -2)
 
         
-        h0, c0 = self.init_hidden(x)
+        #h0, c0 = self.init_hidden(x)
 
-        out, (hn, cn) = self.lstm(x, (h0, c0))
-        out = self.fc(out[:, -1, :])
+        #out, (hn, cn) = self.lstm(x, (h0, c0))
+        #out = self.fc(out[:, -1, :])
         
      
-        forec = torch.sum(out, 0)
+        #forec = torch.sum(out, 0)
         #f = torch.sum(forec, -2)
         
-        m = torch.nn.Softmax(dim=0)
-        f = m(forec)
+        
         
         ## KONIEC DODANIA
         

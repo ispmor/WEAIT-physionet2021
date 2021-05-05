@@ -25,8 +25,16 @@ import sys
 
 twelve_lead_model_filename = '12_lead_model.th'
 six_lead_model_filename = '6_lead_model.th'
+four_lead_model_filename = '4_lead_model.th'
 three_lead_model_filename = '3_lead_model.th'
 two_lead_model_filename = '2_lead_model.th'
+
+twelve_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6')
+six_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF')
+four_leads = ('I', 'II', 'III', 'V2')
+three_leads = ('I', 'II', 'V2')
+two_leads = ('I', 'II')
+leads_set = (twelve_leads, six_leads, four_leads, three_leads, two_leads)
 
 forecast_length = exp["forecast_length"]
 batch_size = exp["batch_size"]
@@ -86,21 +94,19 @@ def training_code(data_directory, model_directory):
     
     labels = np.zeros((num_recordings, num_classes), dtype=np.bool) # One-hot encoding of classes
     #neptune.init('puszkarb/physionet2021')
+    for leads in leads_set:
     
-    name = twelve_lead_model_filename
-    
-    #experiment = neptune.create_experiment(name=name+ f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}')
-    experiment = SummaryWriter()
+        name = get_model_filename(leads)
+
+        experiment = SummaryWriter()
 
 
-    checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
-    training_checkpoint = name + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
+        checkpoint_name = name[:-3] + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
+        training_checkpoint = name[:-3] + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
     
-    #################
-    # Creating a model - will have to somehowe automate it#
-    #################
+
     
-    net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
+        net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
                 forecast_length= forecast_length,
                 thetas_dims=thetas_dim,
                 nb_blocks_per_stack=nb_blocks_per_stack,
@@ -109,260 +115,42 @@ def training_code(data_directory, model_directory):
                 share_weights_in_stack=False,
                 device=device,
                 classes=classes)
-    net.cuda()
-    optimizer = optim.Adam(net.parameters())
+        net.cuda()
+        optimizer = optim.Adam(net.parameters())
 
 
 #############################################3
 
-    old_eval = 100
+        old_eval = 100
     
-    for i in range(num_recordings):
-        print('    {}/{}...'.format(i+1, num_recordings))
+        for i in range(num_recordings):
+            print('    {}/{}...'.format(i+1, num_recordings))
 
-        # Load header and recording.
-        header = load_header(header_files[i])
-        recording = load_recording(recording_files[i])
-        recording_full = get_leads_values(header, recording, twelve_leads)
-        current_labels = get_labels(header)
-        freq = get_frequency(header)
-        if freq != float(500):
-            recording_full = naf.equalize_signal_frequency(freq, recording_full)
+            # Load header and recording.
+            header = load_header(header_files[i])
+            recording = load_recording(recording_files[i])
+            recording_full = get_leads_values(header, recording, twelve_leads)
+            current_labels = get_labels(header)
+            freq = get_frequency(header)
+            if freq != float(500):
+                recording_full = naf.equalize_signal_frequency(freq, recording_full)
             
             
-        for label in current_labels:
-            if label in classes:
-                j = classes.index(label)
-                labels[i, j] = 1
+            for label in current_labels:
+                if label in classes:
+                    j = classes.index(label)
+                    labels[i, j] = 1
 
-        new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
-        if new_eval < old_eval:
-            old_eval = new_eval
+            new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
+            if new_eval < old_eval:
+                old_eval = new_eval
         
     
-
-    # Train 12-lead ECG model.
-    leads = twelve_leads
-    filename = os.path.join(model_directory, twelve_lead_model_filename)
-
-    feature_indices = [twelve_leads.index(lead) for lead in leads] #+ [12, 13]
-    features = data[:, feature_indices]
-
-    #imputer = SimpleImputer().fit(features)
-    #features = imputer.transform(features)
-    #classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
-    print('Savining 12-lead ECG model...')
-    print(filename)
-    save(filename, net, optimizer, classes, leads)
+        filename = os.path.join(model_directory, name)
+        print(f'Savining {len(leads)}-lead ECG model...')
+        print(filename)
+        save(filename, net, optimizer, classes, leads)
     
-    
-
-    # Train 6-lead ECG model.
-    print('Training 6-lead ECG model...')
-
-    leads = six_leads
-    filename = os.path.join(model_directory, six_lead_model_filename)
-    
-    name = six_lead_model_filename
-    
-
-
-    checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
-    training_checkpoint = name + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
-    
-    #################
-    # Creating a model - will have to somehowe automate it#
-    #################
-    
-    net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
-                forecast_length= forecast_length,
-                thetas_dims=thetas_dim,
-                nb_blocks_per_stack=nb_blocks_per_stack,
-                backcast_length=backcast_length,
-                hidden_layer_units=hidden,
-                share_weights_in_stack=False,
-                device=device,
-                classes=classes)
-    net.cuda()
-    optimizer = optim.Adam(net.parameters())
-
-
-#############################################3
-
-    old_eval = 100
-    
-    for i in range(num_recordings):
-        print('    {}/{}...'.format(i+1, num_recordings))
-
-        # Load header and recording.
-        header = load_header(header_files[i])
-        recording = load_recording(recording_files[i])
-        recording_full = get_leads_values(header, recording, six_leads)
-        freq = get_frequency(header)
-        if freq != float(500):
-            recording_full = naf.equalize_signal_frequency(freq, recording_full)
-        current_labels = get_labels(header)
-        for label in current_labels:
-            if label in classes:
-                j = classes.index(label)
-                labels[i, j] = 1
-
-        print("Attempt to perform training")
-        
-        new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
-        if new_eval < old_eval:
-            old_eval = new_eval
-
-    #feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
-    #features = data[:, feature_indices]
-    #imputer = SimpleImputer().fit(features)
-    #features = imputer.transform(features)
-    #classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
-    print('Savining 6-lead ECG model...')
-    print(filename)
-    save(filename, net, optimizer, classes, leads)
-    
-    
-    
-    
-    
-    
-    
-    
-
-    # Train 3-lead ECG model.
-    print('Training 3-lead ECG model...')
-
-    leads = three_leads
-    filename = os.path.join(model_directory, three_lead_model_filename)
-    name = three_lead_model_filename
-    
-
-    checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
-    training_checkpoint = name + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
-    
-    #################
-    # Creating a model - will have to somehowe automate it#
-    #################
-    
-    net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
-                forecast_length= forecast_length,
-                thetas_dims=thetas_dim,
-                nb_blocks_per_stack=nb_blocks_per_stack,
-                backcast_length=backcast_length,
-                hidden_layer_units=hidden,
-                share_weights_in_stack=False,
-                device=device,
-                classes=classes)
-    net.cuda()
-    optimizer = optim.Adam(net.parameters())
-
-
-#############################################3
-
-    old_eval = 100
-    
-    for i in range(num_recordings):
-        print('    {}/{}...'.format(i+1, num_recordings))
-
-        # Load header and recording.
-        header = load_header(header_files[i])
-        recording = load_recording(recording_files[i])
-        recording_full = get_leads_values(header, recording, three_leads)
-        current_labels = get_labels(header)
-        freq = get_frequency(header)
-        if freq != float(500):
-            recording_full = naf.equalize_signal_frequency(freq, recording_full)
-        for label in current_labels:
-            if label in classes:
-                j = classes.index(label)
-                labels[i, j] = 1
-
-        print("Attempt to perform training")
-        
-        new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
-        if new_eval < old_eval:
-            old_eval = new_eval
-
-    #feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
-    #features = data[:, feature_indices]
-    #imputer = SimpleImputer().fit(features)
-    #features = imputer.transform(features)
-    #classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
-    print('Savining 3-lead ECG model...')
-    print(filename)
-    save(filename, net, optimizer, classes, leads)
-    
-    
-    
-    
- 
-    
-    
-    
-   
-
-    # Train 2-lead ECG model.
-    print('Training 2-lead ECG model...')
-
-    leads = two_leads
-    filename = os.path.join(model_directory, two_lead_model_filename)
-    name = two_lead_model_filename
-    
-
-    checkpoint_name = name + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
-    training_checkpoint = name + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
-    
-    #################
-    # Creating a model - will have to somehowe automate it#
-    #################
-    
-    net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
-                forecast_length= forecast_length,
-                thetas_dims=thetas_dim,
-                nb_blocks_per_stack=nb_blocks_per_stack,
-                backcast_length=backcast_length,
-                hidden_layer_units=hidden,
-                share_weights_in_stack=False,
-                device=device,
-                classes=classes)
-    net.cuda()
-    optimizer = optim.Adam(net.parameters())
-
-
-#############################################3
-
-    old_eval = 100
-    for i in range(num_recordings):
-        print('    {}/{}...'.format(i+1, num_recordings))
-
-        # Load header and recording.
-        header = load_header(header_files[i])
-        recording = load_recording(recording_files[i])
-        recording_full = get_leads_values(header, recording, two_leads)
-        current_labels = get_labels(header)
-        freq = get_frequency(header)
-        if freq != float(500):
-            recording_full = naf.equalize_signal_frequency(freq, recording_full)
-        for label in current_labels:
-            if label in classes:
-                j = classes.index(label)
-                labels[i, j] = 1
-
-        print("Attempt to perform training")
-        
-        new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
-        if new_eval < old_eval:
-            old_eval = new_eval
-
-    #feature_indices = [twelve_leads.index(lead) for lead in leads] + [12, 13]
-    #features = data[:, feature_indices]
-    #imputer = SimpleImputer().fit(features)
-    #features = imputer.transform(features)
-    #classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
-    print('Savining 2-lead ECG model...')
-    print(filename)
-    save(filename, net, optimizer, classes, leads)
     
 
 ################################################################################
@@ -382,27 +170,10 @@ def save(checkpoint_name, model, optimiser, classes, leads):
 
 
 # Load your trained 12-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
-def load_twelve_lead_model(model_directory):
-    filename = os.path.join(model_directory, twelve_lead_model_filename)
-    return load_model(filename)
-
-# Load your trained 6-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
-def load_six_lead_model(model_directory):
-    filename = os.path.join(model_directory, six_lead_model_filename)
-    return load_model(filename)
-
-# Load your trained 3-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
-def load_three_lead_model(model_directory):
-    filename = os.path.join(model_directory, three_lead_model_filename)
-    return load_model(filename)
-
-# Load your trained 2-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
-def load_two_lead_model(model_directory):
-    filename = os.path.join(model_directory, two_lead_model_filename)
-    return load_model(filename)
 
 # Generic function for loading a model.
-def load_model(filename):
+def load_model(model_directory, leads):
+    filename = os.path.join(model_directory, get_model_filename(leads))
     checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
 
     model = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
@@ -421,27 +192,6 @@ def load_model(filename):
     print(f'Restored checkpoint from {filename}.')
     return model
 
-################################################################################
-#
-# Running trained model functions
-#
-################################################################################
-
-# Run your trained 12-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
-def run_twelve_lead_model(model, header, recording):
-    return run_model(model, header, recording)
-
-# Run your trained 6-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
-def run_six_lead_model(model, header, recording):
-    return run_model(model, header, recording)
-
-# Run your trained 3-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
-def run_three_lead_model(model, header, recording):
-    return run_model(model, header, recording)
-
-# Run your trained 2-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
-def run_two_lead_model(model, header, recording):
-    return run_model(model, header, recording)
 
 # Generic function for running a trained model.
 def run_model(model, header, recording):
@@ -461,12 +211,27 @@ def run_model(model, header, recording):
 
     return classes, labels, probabilities.detach().cpu().numpy()
 
-################################################################################
-#
-# Other functions
-#
-################################################################################
 
+# Define the filename(s) for the trained models. This function is not required. You can change or remove it.
+def get_model_filename(leads):
+    number = len(leads)
+    if number == 12:
+        return twelve_lead_model_filename
+    elif number == 6:
+        return six_lead_model_filename
+    elif number == 4:
+        return four_lead_model_filename
+    elif number == 3:
+        return three_lead_model_filename
+    else:
+        return two_lead_model_filename
+
+
+################################################################################
+#
+# Feature extraction function
+#
+################################################################################
 # Extract features from the header and recording.
 def get_features(header, recording, leads):
     # Extract age.
@@ -484,22 +249,17 @@ def get_features(header, recording, leads):
         sex = float('nan')
 
     # Reorder/reselect leads in recordings.
-    available_leads = get_leads(header)
-    indices = list()
-    for lead in leads:
-        i = available_leads.index(lead)
-        indices.append(i)
-    recording = recording[indices, :]
+    recording = choose_leads(recording, header, leads)
 
     # Pre-process recordings.
-    adc_gains = get_adcgains(header, leads)
+    adc_gains = get_adc_gains(header, leads)
     baselines = get_baselines(header, leads)
     num_leads = len(leads)
     for i in range(num_leads):
         recording[i, :] = (recording[i, :] - baselines[i]) / adc_gains[i]
 
     # Compute the root mean square of each ECG lead signal.
-    rms = np.zeros(num_leads, dtype=np.float32)
+    rms = np.zeros(num_leads)
     for i in range(num_leads):
         x = recording[i, :]
         rms[i] = np.sqrt(np.sum(x**2) / np.size(x))
@@ -518,7 +278,7 @@ def get_leads_values(header, recording, leads):
     recording = recording[indices, :]
     
     # Pre-process recordings.
-    adc_gains = get_adcgains(header, leads)
+    adc_gains = get_adc_gains(header, leads)
     baselines = get_baselines(header, leads)
     num_leads = len(leads)
     for i in range(num_leads):
