@@ -16,8 +16,8 @@ exp_net_params = dict(
     batch_size = 16,
     classes =  ['LBBB', 'STD', 'Normal', 'RBBB', 'AF', 'I-AVB', 'STE', 'PAC', 'PVC'],
     backcast_multiplier = 7,
-    hidden_layer_units=500,
-    nb_blocks_per_stack= 1,
+    hidden_layer_units=32,
+    nb_blocks_per_stack= 3,
     thetas_dim=[16, 16]
 )
 

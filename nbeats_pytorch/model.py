@@ -3,6 +3,9 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+import pdb
+
+
 
 class NBeatsNet(nn.Module):
     SEASONALITY_BLOCK = 'seasonality'
@@ -72,8 +75,9 @@ class NBeatsNet(nn.Module):
                 b, f = self.stacks[stack_id][block_id](backcast)
                 backcast = backcast.to(self.device) - b
                 forecast = forecast.to(self.device) + f
-        m = torch.nn.Softmax(dim=0)
-        forecast = m(forecast)
+        
+        #m = torch.nn.Softmax(dim=0)
+        forecast = minmaxnorm(forecast)
         return backcast, forecast
 
 
@@ -86,7 +90,12 @@ def seasonality_model(thetas, t, device):
     S = torch.cat([s1, s2])
     return thetas.mm(S.to(device))
 
-
+def minmaxnorm(forecast):
+    mi = forecast.min()
+    ma = forecast.max()
+    forecast = (forecast - mi) / (ma - mi)
+    return forecast
+    
 def trend_model(thetas, t, device):
     p = thetas.size()[-1]
     assert p <= 4, 'thetas_dim is too big.'

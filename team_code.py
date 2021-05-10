@@ -48,6 +48,7 @@ cuda0 = torch.cuda.set_device(0)
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 torch.pin_memory=False
+            
 
 
 
@@ -59,6 +60,8 @@ torch.pin_memory=False
 
 # Train your model. This function is *required*. Do *not* change the arguments of this function.
 def training_code(data_directory, model_directory):
+    
+    
     # Find header and recording files.
     print('Finding header and recording files...')
 
@@ -122,34 +125,35 @@ def training_code(data_directory, model_directory):
 #############################################3
 
         old_eval = 100
-    
-        for i in range(num_recordings):
-            print('    {}/{}...'.format(i+1, num_recordings))
+        num_epochs = 1
+        for epoch in range(num_epochs):
+            for i in range(num_recordings):
+                print('    {}/{}...'.format(i+1, num_recordings))
 
-            # Load header and recording.
-            header = load_header(header_files[i])
-            recording = load_recording(recording_files[i])
-            recording_full = get_leads_values(header, recording, twelve_leads)
-            current_labels = get_labels(header)
-            freq = get_frequency(header)
-            if freq != float(500):
-                recording_full = naf.equalize_signal_frequency(freq, recording_full)
+                # Load header and recording.
+                header = load_header(header_files[i])
+                recording = load_recording(recording_files[i])
+                recording_full = get_leads_values(header, recording, twelve_leads)
+                current_labels = get_labels(header)
+                freq = get_frequency(header)
+                if freq != float(500):
+                    recording_full = naf.equalize_signal_frequency(freq, recording_full)
             
             
-            for label in current_labels:
-                if label in classes:
-                    j = classes.index(label)
-                    labels[i, j] = 1
+                for label in current_labels:
+                    if label in classes:
+                        j = classes.index(label)
+                        labels[i, j] = 1
 
-            new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval)
-            if new_eval < old_eval:
-                old_eval = new_eval
+                new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval, epoch*num_recordings+i)
+                if new_eval < old_eval:
+                    old_eval = new_eval
         
     
-        filename = os.path.join(model_directory, name)
-        print(f'Savining {len(leads)}-lead ECG model...')
-        print(filename)
-        save(filename, net, optimizer, classes, leads)
+            filename = os.path.join(model_directory, name)
+            print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
+            print(filename)
+            save(filename, net, optimizer, classes, leads)
     
     
 
@@ -287,13 +291,14 @@ def get_leads_values(header, recording, leads):
     return recording 
 
 
-def train_full_grad_steps(data, device, net, optimizer, test_losses, training_checkpoint, size):
-    global_step = naf.load(training_checkpoint, net, optimizer)
+def train_full_grad_steps(data, device, net, optimizer, test_losses, training_checkpoint, size, global_step):
+    global_step_checkpoint = naf.load(training_checkpoint, net, optimizer)
+    print(f"Global step loaded from the checkpoint: {global_step_checkpoint}")
     local_step = 0
     each_epoch_plot = True
 
     for x_train_batch, y_train_batch in data:
-        global_step += 1
+        
         local_step += 1
         optimizer.zero_grad()
         net.train()
@@ -304,16 +309,22 @@ def train_full_grad_steps(data, device, net, optimizer, test_losses, training_ch
         #loss = F.mse_loss(forecast, y_train_batch.clone().detach())#.to(device))
         loss.backward()
         optimizer.step()
-        if global_step > 0 and global_step % 100 == 0:
-            with torch.no_grad():
-                print("Training batches passed: %d" % (local_step))
-                naf.save(training_checkpoint, net, optimizer, global_step)
+
         if local_step > 0 and local_step % size == 0:
-            return global_step
+            break
+    
+    with torch.no_grad():
+        print("Training batches passed: %d" % (local_step))
+        print(f"Global step saved: {global_step}")
+
+        naf.save(training_checkpoint, net, optimizer, global_step)
+    
+    if local_step > 0 and local_step % size == 0:
+        return global_step
 
 
 
-def perform_training(net, optimizer, recordings, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels, old_eval):
+def perform_training(net, optimizer, recordings, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels, old_eval, i):
     test_losses = []
     the_lowest_error = [100]
 
@@ -321,7 +332,7 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
     data, x_train, y_train, x_test, y_test = naf.get_data_with_labels(recordings,forecast_length, backcast_length, batch_size, device, labels)
     
 
-    global_step = train_full_grad_steps(data, device, net, optimizer, test_losses, model_directory + training_checkpoint, x_train.shape[0])
+    global_step = train_full_grad_steps(data, device, net, optimizer, test_losses, model_directory + training_checkpoint, x_train.shape[0], i)
 
     train_eval = naf.evaluate_training(backcast_length,
                                        forecast_length,
@@ -333,7 +344,7 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
                                        device,
                                        experiment=experiment)
                                                                                                   
-    experiment.add_scalar(f'train_loss_{training_checkpoint}', train_eval)
+    experiment.add_scalar(f'train_loss_{training_checkpoint}', train_eval, i)
 
 
     new_eval = naf.evaluate_training(backcast_length,
@@ -345,7 +356,7 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
                                      the_lowest_error,
                                      device,
                                      experiment=experiment)
-    experiment.add_scalar(f'eval_loss_{training_checkpoint}', new_eval)
+    experiment.add_scalar(f'eval_loss_{training_checkpoint}', new_eval, i)
     
     print("\n New evaluation sccore: %f, ---->>>> old score: %f" % (new_eval, old_eval))
     #if new_eval < old_eval:
