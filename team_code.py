@@ -4,11 +4,14 @@
 # Some functions are *required*, but you can edit most parts of required functions, remove non-required functions, and add your own function.
 
 from helper_code import *
-import numpy as np
+import numpy as np, os, sys, joblib
+
+
 
 ####
 from torch.utils.tensorboard import SummaryWriter
-from nbeats_pytorch.model import NBeatsNet
+from nbeats_pytorch.model import LSTM_ECG
+from torch.nn import functional as F
 from torch import nn
 from torch.utils import data as torch_data
 import nbeats_additional_functions_2021 as naf
@@ -42,11 +45,14 @@ backcast_length = exp["backcast_length"]
 hidden = exp["hidden_layer_units"]
 nb_blocks_per_stack = exp["nb_blocks_per_stack"]
 thetas_dim = exp["thetas_dim"]
-stacks_number = exp["stacks_number"]
-cuda0 = torch.cuda.set_device(0)
+window_size = exp["window_size"]
+
+
+#cuda0 = torch.cuda.set_device(0)
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-# torch.set_default_tensor_type('torch.cuda.FloatTensor')
-torch.pin_memory = False
+#torch.set_default_tensor_type('torch.cuda.FloatTensor')
+torch.pin_memory=False
+            
 
 classes_numbers = dict()
 class_files_numbers = dict()
@@ -77,22 +83,10 @@ def training_code(data_directory, model_directory):
     print('Extracting classes...')
 
     classes = set()
-    multi_label_counter_1 = 0
-    multi_label_counter_2 = 0
-    multi_label_counter_3 = 0
-    single_label_counter = 0
+
     for header_file in header_files:
         header = load_header(header_file)
         classes_from_header = get_labels(header)
-        if len(classes_from_header) > 3:
-            multi_label_counter_3 += 1
-        elif len(classes_from_header) > 2:
-            multi_label_counter_2 += 1
-        elif len(classes_from_header) > 1:
-            multi_label_counter_1 += 1
-        else:
-            single_label_counter += 1
-
         classes |= set(classes_from_header)
         for c in classes_from_header:
             if c in class_files_numbers:
@@ -103,10 +97,9 @@ def training_code(data_directory, model_directory):
     if all(is_integer(x) for x in classes):
         classes = sorted(classes, key=lambda x: int(x))  # Sort classes numerically if numbers.
     else:
-        classes = sorted(classes)  # Sort classes alphanumerically otherwise.
+        classes = sorted(classes) # Sort classes alphanumerically otherwise.
     num_classes = len(classes)
     print(classes)
-    print(class_files_numbers)
 
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
@@ -124,21 +117,14 @@ def training_code(data_directory, model_directory):
         filename = os.path.join(model_directory, name)
         experiment = SummaryWriter()
 
-        checkpoint_name = name[
-                          :-3] + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
-        training_checkpoint = name[
-                              :-3] + "_training" + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
 
-        net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
-                        forecast_length=forecast_length,
-                        thetas_dims=thetas_dim,
-                        nb_blocks_per_stack=nb_blocks_per_stack,
-                        backcast_length=backcast_length,
-                        hidden_layer_units=hidden,
-                        share_weights_in_stack=False,
-                        device=device,
-                        classes=classes,
-                        stacks_number=stacks_number)
+        checkpoint_name = name[:-3] + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
+        training_checkpoint = name[:-3] + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
+    
+
+    
+        print("Creating LSTM")
+        net = LSTM_ECG(device, forecast_length, num_classes, hidden_dim=1024, classes=classes, leads=leads)
         net.cuda()
         optimizer = optim.Adam(net.parameters(), lr=0.01, weight_decay=0.0001)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
@@ -210,7 +196,7 @@ def training_code(data_directory, model_directory):
             mean = torch.mean(torch.stack(epoch_loss))
             #mean_mse = torch.mean(torch.stack(epoch_loss_mse))
             print("Epoch: %d Training loss: %f" % (epoch, mean))
-            name_exp = 'train_loss_' + str(len(leads)) + "stacks:" + str(stacks_number)
+            name_exp = 'train_loss_' + str(len(leads)) + "LSTM"
 
             with torch.no_grad():
                 epoch_loss = []
@@ -264,9 +250,9 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
 
         grp = h5file.create_group(group)
 
-        dset = grp.create_dataset("data", (1, len(leads), single_peak_length),
-                                  maxshape=(None, len(leads), single_peak_length), dtype='f',
-                                  chunks=(1, len(leads), single_peak_length))
+        dset = grp.create_dataset("data", (1, len(leads), window_size),
+                                  maxshape=(None, len(leads), window_size), dtype='f',
+                                  chunks=(1, len(leads), window_size))
         lset = grp.create_dataset("label", (1, num_classes), maxshape=(None, num_classes), dtype='f',
                                   chunks=(1, num_classes))
         counter = 0
@@ -285,7 +271,7 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             if freq != float(500):
                 recording_full = naf.equalize_signal_frequency(freq, recording_full)
 
-            recording_full = naf.one_file_training_data(recording_full, single_peak_length, device)
+            recording_full = naf.one_file_training_data(recording_full, window_size, device)
             local_label = np.zeros((num_classes,), dtype=np.bool)
             for label in current_labels:
                 if label in classes:
@@ -327,17 +313,8 @@ def load_model(model_directory, leads):
     filename = os.path.join(model_directory, get_model_filename(leads))
     checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
 
-    model = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
-                      forecast_length=forecast_length,
-                      thetas_dims=thetas_dim,
-                      nb_blocks_per_stack=nb_blocks_per_stack,
-                      backcast_length=backcast_length,
-                      hidden_layer_units=hidden,
-                      share_weights_in_stack=False,
-                      device=device,
-                      classes=checkpoint['classes'],
-                      stacks_number=stacks_number)
-
+    model = LSTM_ECG(device, forecast_length, len(checkpoint["classes"]), hidden_dim=1024, classes=checkpoint["classes"])
+    
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
     model.cuda()
@@ -352,10 +329,10 @@ def run_model(model, header, recording):
 
     features = get_leads_values(header, recording.astype(np.float), leads)
 
-    features = torch.Tensor(naf.one_file_training_data(features, single_peak_length, device))
+    features = torch.Tensor(naf.one_file_training_data(features, window_size, device))
     # Predict labels and probabilities.
-    _, probabilities = model(features)
-
+    probabilities = model(features.clone().detach())
+ 
     probabilities_mean = torch.mean(probabilities, 0)
 
     labels = np.asarray(probabilities_mean.detach().cpu().numpy(), dtype=np.int)
@@ -440,34 +417,4 @@ def get_leads_values(header, recording, leads):
     return recording
 
 
-def train_full_grad_steps(data, net, optimizer, training_checkpoint, size, global_step):
-    global_step_checkpoint = naf.load(training_checkpoint, net, optimizer)
-    print(f"Global step loaded from the checkpoint: {global_step_checkpoint}")
-    local_step = 0
-    each_epoch_plot = True
-
-    for x_train_batch, y_train_batch in data:
-
-        local_step += 1
-        optimizer.zero_grad()
-        net.train()
-        _, forecast = net(x_train_batch.clone().detach())  # .to(device)) #Dodaje od
-        m = nn.BCEWithLogitsLoss()
-
-        loss = m(forecast, y_train_batch[0])  # torch.zeros(size=(16,)))
-        # loss = F.mse_loss(forecast, y_train_batch.clone().detach())#.to(device))
-        loss.backward()
-        optimizer.step()
-
-        if local_step > 0 and local_step % size == 0:
-            break
-
-    with torch.no_grad():
-        print("Training batches passed: %d" % (local_step))
-        print(f"Global step saved: {global_step}")
-
-        naf.save(training_checkpoint, net, optimizer, global_step)
-
-    if local_step > 0 and local_step % size == 0:
-        return global_step
 

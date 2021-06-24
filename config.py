@@ -20,8 +20,11 @@ exp_net_params = dict(
     nb_blocks_per_stack=3,
     thetas_dim=[16, 16],
     single_peak_length=500,
+    window_size=500,
     stacks_number=10
 )
+
+
 
 epoch_limit = 25
 
