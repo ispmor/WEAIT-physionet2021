@@ -91,13 +91,13 @@ If you have trouble running your code, then please try the follow steps to run t
 
         user@computer:~/example$ cd python-classifier-2021/
 
-        user@computer:~/example/python-classifier-2021$ docker build -t image .
+        user@computer:~/example/python-classifier-2021$ docker build --no-cache -t image .
 
         Sending build context to Docker daemon  30.21kB
         [...]
         Successfully tagged image:latest
 
-        user@computer:~/example/python-classifier-2021$ docker run -it -v ~/example/model:/physionet/model -v ~/example/test_data:/physionet/test_data -v ~/example/test_outputs:/physionet/test_outputs -v ~/example/training_data:/physionet/training_data image bash
+        user@computer:~/example/python-classifier-2021$ docker run --gpus device=0 -it -v ~/physionet-challenge/model:/physionet/model -v ~/physionet-challenge/test_data:/physionet/test_data -v ~/physionet-challenge/test_outputs:/physionet/test_outputs -v ~/physionet-challenge/training_data:/physionet/training_data image bash
 
         root@[...]:/physionet# ls
             Dockerfile             model             test_data      train_model.py
