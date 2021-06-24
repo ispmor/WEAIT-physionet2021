@@ -10,7 +10,7 @@ import numpy as np, os, sys, joblib
 
 ####
 from torch.utils.tensorboard import SummaryWriter
-from nbeats_pytorch.model import NBeatsNet
+from nbeats_pytorch.model import LSTM_ECG
 from torch.nn import functional as F
 from torch import nn
 import nbeats_additional_functions_2021 as naf
@@ -42,11 +42,12 @@ backcast_length = exp["backcast_length"]
 hidden = exp["hidden_layer_units"]
 nb_blocks_per_stack = exp["nb_blocks_per_stack"]
 thetas_dim = exp["thetas_dim"]
+window_size = exp["window_size"]
 
 
-cuda0 = torch.cuda.set_device(0)
+#cuda0 = torch.cuda.set_device(0)
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+#torch.set_default_tensor_type('torch.cuda.FloatTensor')
 torch.pin_memory=False
             
 
@@ -109,15 +110,8 @@ def training_code(data_directory, model_directory):
     
 
     
-        net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
-                forecast_length= forecast_length,
-                thetas_dims=thetas_dim,
-                nb_blocks_per_stack=nb_blocks_per_stack,
-                backcast_length=backcast_length,
-                hidden_layer_units=hidden,
-                share_weights_in_stack=False,
-                device=device,
-                classes=classes)
+        print("Creating LSTM")
+        net = LSTM_ECG(device, forecast_length, num_classes, hidden_dim=1024, classes=classes, leads=leads)
         net.cuda()
         optimizer = optim.Adam(net.parameters())
 
@@ -177,18 +171,11 @@ def save(checkpoint_name, model, optimiser, classes, leads):
 
 # Generic function for loading a model.
 def load_model(model_directory, leads):
+    print("LOADING !!!!!!!!!!!!!!!!!!!!!")
     filename = os.path.join(model_directory, get_model_filename(leads))
     checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
 
-    model = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
-                forecast_length= forecast_length,
-                thetas_dims=thetas_dim,
-                nb_blocks_per_stack=nb_blocks_per_stack,
-                backcast_length=backcast_length,
-                hidden_layer_units=hidden,
-                share_weights_in_stack=False,
-                device=device,
-                classes=checkpoint['classes'])
+    model = LSTM_ECG(device, forecast_length, len(checkpoint["classes"]), hidden_dim=1024, classes=checkpoint["classes"])
     
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
@@ -206,7 +193,7 @@ def run_model(model, header, recording):
 
     features = naf.one_file_training_data(features, forecast_length, backcast_length, device)
     # Predict labels and probabilities.
-    _, probabilities = model(features.clone().detach())
+    probabilities = model(features.clone().detach())
  
     labels = np.asarray(probabilities.detach().cpu().numpy(), dtype=np.int)
 
@@ -292,8 +279,8 @@ def get_leads_values(header, recording, leads):
 
 
 def train_full_grad_steps(data, device, net, optimizer, test_losses, training_checkpoint, size, global_step):
-    global_step_checkpoint = naf.load(training_checkpoint, net, optimizer)
-    print(f"Global step loaded from the checkpoint: {global_step_checkpoint}")
+    #global_step_checkpoint = naf.load(training_checkpoint, net, optimizer)
+    #print(f"Global step loaded from the checkpoint: {global_step_checkpoint}")
     local_step = 0
     each_epoch_plot = True
 
@@ -301,11 +288,13 @@ def train_full_grad_steps(data, device, net, optimizer, test_losses, training_ch
         
         local_step += 1
         optimizer.zero_grad()
+        print("Before train")
+        print(y_train_batch[0])
         net.train()
-        _, forecast = net(x_train_batch.clone().detach())#.to(device)) #Dodaje od 
+        probabilities = net(x_train_batch.clone().detach()) #Dodaje od 
         m = nn.BCEWithLogitsLoss()
 
-        loss = m(forecast, y_train_batch[0])#torch.zeros(size=(16,)))
+        loss = m(probabilities, y_train_batch.clone().detach().to(device))#torch.zeros(size=(16,)))
         #loss = F.mse_loss(forecast, y_train_batch.clone().detach())#.to(device))
         loss.backward()
         optimizer.step()

@@ -18,8 +18,11 @@ exp_net_params = dict(
     backcast_multiplier = 7,
     hidden_layer_units=32,
     nb_blocks_per_stack= 3,
-    thetas_dim=[16, 16]
+    thetas_dim=[16, 16],
+    window_size=500
 )
+
+
 
 
 

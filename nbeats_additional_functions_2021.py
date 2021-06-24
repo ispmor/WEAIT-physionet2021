@@ -90,10 +90,10 @@ def get_data_with_labels(recording, forecast_length, backcast_length, batch_size
 
 def evaluate_training(backcast_length, forecast_length, net, test_losses, x_test, y_test, the_lowest_error, device, experiment, plot_eval=False, step=0, file_name=""):
     net.eval()
-    _, forecast = net(x_test.clone().detach())
+    forecast = net(x_test.clone().detach())
     
     m = nn.BCEWithLogitsLoss()
-    singular_loss = m(forecast, y_test[0]).item()
+    singular_loss = m(forecast, y_test).item()
     
     #singular_loss = F.mse_loss(forecast, y_test.clone().detach()).item()
         
