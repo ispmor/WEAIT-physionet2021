@@ -5,6 +5,7 @@ import torch
 from datetime import date
 import config
 from scipy import stats
+from scipy import signal
 from torch import nn
 from torch.nn import functional as F
 #import matplotlib.pyplot as plt
@@ -15,6 +16,16 @@ today = date.today().strftime("%d%m%Y")
 #def plot_scatter(*args, **kwargs):
     #plt.plot(*args, **kwargs)
     #plt.scatter(*args, **kwargs)
+    
+fs = 500.0
+hum_freq = [60.0, 120.0, 240.0]
+Q = 30.0
+
+notch_60_b, notch_60_a = signal.iirnotch(hum_freq[0], Q, fs)
+notch_120_b, notch_120_a = signal.iirnotch(hum_freq[1],Q, fs)
+notch_240_b, notch_240_a = signal.iirnotch(hum_freq[2],Q, fs)
+
+sos = signal.butter(10, 1, 'hp', fs=500, output='sos')
 
 
 def data_generator(x, y, batch_size):
@@ -154,26 +165,34 @@ def equalize_signal_frequency(freq, recording_full):
             new_lead = np.interp(x, xp, lead)
             new_recording_full.append(new_lead)
         new_recording_full = np.array(new_recording_full)
-        #fig = plt.figure(1, figsize=(12, 10))
-        #plt.grid()
-        #plot_scatter(xp[0:1000], recording_full[0][0:1000], color='b')
-        #plot_scatter(x[0:2000], new_recording_full[0][0:2000], color='g')
-        #plt.savefig("/home/puszkar/signal.png")
-        #plt.close()
+
                                 
     if freq == float(1000):
         x_base = list(range(len(recording_full[0])))
         x_shortened = x_base[::2]
         new_recording_full = recording_full[:,::2]
 
-        #fig = plt.figure(1, figsize=(12, 10))
-        #plt.grid()
-        #plot_scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
-        #plot_scatter(x_shortened[0:1000], new_recording_full[0][0:1000], color='g')
-        #plt.savefig("/home/puszkar/signal.png")
-        #plt.close()
             
-
+    #fig = plt.figure(1, figsize=(12, 10))
+    #plt.grid()
+    #plot_scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
+    #plot_scatter(x_shortened[0:1000], new_recording_full[0][0:1000], color='g')
+    #plt.savefig("/home/puszkar/signal-500.png")
+    #plt.close()
+    
     return new_recording_full
             
+    
+    
+def apply_notch_filters(input_signal):
+    output_signal = signal.filtfilt(notch_60_b, notch_60_a, input_signal)
+    output_signal = signal.filtfilt(notch_120_b, notch_120_a, output_signal)
+    output_signal = signal.filtfilt(notch_240_b, notch_240_a, output_signal)
+    output_signal = signal.sosfilt(sos, output_signal)
+    
+    return output_signal
+    
+    
+    
+    
     
