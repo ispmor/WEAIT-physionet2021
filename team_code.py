@@ -21,7 +21,7 @@ from config import exp_net_params as exp
 from config import epoch_limit
 from config import leads_dict 
 import sys
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 
 twelve_lead_model_filename = '12_lead_model.th'
@@ -141,24 +141,24 @@ def training_code(data_directory, model_directory):
                 if freq != float(500):
                     recording_full = naf.equalize_signal_frequency(freq, recording_full)
             
-                x_base = list(range(len(recording_full[0])))
-                fig = plt.figure(1, figsize=(12, 10))
-                plt.grid()
+                #x_base = list(range(len(recording_full[0])))
+                #fig = plt.figure(1, figsize=(12, 10))
+                #plt.grid()
                 print(recording_full)
-                plt.title(str(i))
-                plt.scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
-                plt.savefig("/home/puszkar/signal-500.png")
-                plt.close()
+                #plt.title(str(i))
+                #plt.scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
+                #plt.savefig("/home/puszkar/signal-500.png")
+                #plt.close()
                 
                 recording_full = naf.apply_notch_filters(recording_full)
-                x_base = list(range(len(recording_full[0])))
-                fig = plt.figure(1, figsize=(12, 10))
-                plt.grid()
-                plt.title(str(i))
+                #x_base = list(range(len(recording_full[0])))
+                #fig = plt.figure(1, figsize=(12, 10))
+                #plt.grid()
+                #plt.title(str(i))
                 print(recording_full)
-                plt.scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
-                plt.savefig("/home/puszkar/signal-notch.png")
-                plt.close()
+                #plt.scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
+                #plt.savefig("/home/puszkar/signal-notch.png")
+                #plt.close()
             
                 for label in current_labels:
                     if label in classes:
