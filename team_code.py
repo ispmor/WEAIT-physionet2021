@@ -21,6 +21,7 @@ from config import exp_net_params as exp
 from config import epoch_limit
 from config import leads_dict 
 import sys
+import matplotlib.pyplot as plt
 
 
 twelve_lead_model_filename = '12_lead_model.th'
@@ -132,13 +133,32 @@ def training_code(data_directory, model_directory):
 
                 # Load header and recording.
                 header = load_header(header_files[i])
-                recording = load_recording(recording_files[i])
+                recording = np.array(load_recording(recording_files[i]), dtype=np.float32)
+                
                 recording_full = get_leads_values(header, recording, twelve_leads)
                 current_labels = get_labels(header)
                 freq = get_frequency(header)
                 if freq != float(500):
                     recording_full = naf.equalize_signal_frequency(freq, recording_full)
             
+                x_base = list(range(len(recording_full[0])))
+                fig = plt.figure(1, figsize=(12, 10))
+                plt.grid()
+                print(recording_full)
+                plt.title(str(i))
+                plt.scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
+                plt.savefig("/home/puszkar/signal-500.png")
+                plt.close()
+                
+                recording_full = naf.apply_notch_filters(recording_full)
+                x_base = list(range(len(recording_full[0])))
+                fig = plt.figure(1, figsize=(12, 10))
+                plt.grid()
+                plt.title(str(i))
+                print(recording_full)
+                plt.scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
+                plt.savefig("/home/puszkar/signal-notch.png")
+                plt.close()
             
                 for label in current_labels:
                     if label in classes:
@@ -275,6 +295,7 @@ def get_features(header, recording, leads):
 def get_leads_values(header, recording, leads):
     # Reorder/reselect leads in recordings.
     available_leads = get_leads(header)
+    print("AVAILABLE LEADS:", available_leads)
     indices = list()
     for lead in leads:
         i = available_leads.index(lead)
@@ -283,11 +304,13 @@ def get_leads_values(header, recording, leads):
     
     # Pre-process recordings.
     adc_gains = get_adc_gains(header, leads)
+    print(adc_gains)
     baselines = get_baselines(header, leads)
+    print(baselines)
     num_leads = len(leads)
     for i in range(num_leads):
         recording[i, :] = (recording[i, :] - baselines[i]) / adc_gains[i]
-   
+
     return recording 
 
 
