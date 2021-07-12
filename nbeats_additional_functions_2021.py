@@ -136,8 +136,9 @@ def evaluate_training(backcast_length, forecast_length, net, test_losses, x_test
 
 def one_file_training_data(recording, single_peak_length, cuda):
     x = []
+    print(type(len(recording[0])), type(single_peak_length))
     if len(recording[0]) - single_peak_length > single_peak_length:
-        for i in range(0, len(recording[0]) - single_peak_length, single_peak_length / 2):
+        for i in range(0, len(recording[0]) - single_peak_length, single_peak_length // 2):
             x.append(recording[:, i:i + single_peak_length])
     else:
         for i in range(4):

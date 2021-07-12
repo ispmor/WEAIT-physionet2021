@@ -127,8 +127,8 @@ def training_code(data_directory, model_directory):
 
         ################ CREATE HDF5 DATABASE #############################3
         with h5py.File(f'cinc_database_{len(leads)}.hdf5', 'w') as dataset_file:
-            dset = dataset_file.create_dataset("signals", (num_recordings, len(leads), single_peak_length), dtype='f')
-            lset = dataset_file.create_dataset("labels", (num_classes,), dtype='i')
+            dset = dataset_file.create_dataset("signals",(0, len(leads), single_peak_length), maxshape=(2**32, len(leads), single_peak_length), dtype='f')
+            lset = dataset_file.create_dataset("labels", (0, num_classes), dtype='i')
 
             for i in range(num_recordings):
                 print('    {}/{}...'.format(i+1, num_recordings))
@@ -149,10 +149,15 @@ def training_code(data_directory, model_directory):
                     if label in classes:
                         j = classes.index(label)
                         labels[i, j] = 1
+                        local_label = labels[i]
 
-                dset[i] = recording_full
+                print(dset.shape)
+                print(dset[i].shape)
+                print(recording_full.detach().cpu().shape)
 
-            lset[:] = labels
+                dset[:] = np.vstack([dset,recording_full.detach().cpu()])
+
+                lset[:] = np.vstack([lset,recording_full.detach().cpu()])
 
         database = h5py.File(f'cinc_database_{len(leads)}.hdf5', 'r')
         print(database.keys())
