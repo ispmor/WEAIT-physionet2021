@@ -18,8 +18,9 @@ import os
 import torch
 from torch import optim
 from config import exp_net_params as exp
+import h5py
 from config import epoch_limit
-from config import leads_dict 
+from config import leads_dict
 import sys
 #import matplotlib.pyplot as plt
 
@@ -37,6 +38,7 @@ three_leads = ('I', 'II', 'V2')
 two_leads = ('I', 'II')
 leads_set = (twelve_leads, six_leads, four_leads, three_leads, two_leads)
 
+single_peak_length = exp["single_peak_length"]
 forecast_length = exp["forecast_length"]
 batch_size = exp["batch_size"]
 backcast_length = exp["backcast_length"]
@@ -49,7 +51,7 @@ cuda0 = torch.cuda.set_device(0)
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 torch.pin_memory=False
-            
+
 
 
 
@@ -61,8 +63,8 @@ torch.pin_memory=False
 
 # Train your model. This function is *required*. Do *not* change the arguments of this function.
 def training_code(data_directory, model_directory):
-    
-    
+
+
     # Find header and recording files.
     print('Finding header and recording files...')
 
@@ -93,13 +95,13 @@ def training_code(data_directory, model_directory):
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
 
-    data = np.zeros((num_recordings, 14), dtype=np.float32) # 14 features: one feature for each lead, one feature for age, and one feature for sex   
-    
-    
+    data = np.zeros((num_recordings, 14), dtype=np.float32) # 14 features: one feature for each lead, one feature for age, and one feature for sex
+
+
     labels = np.zeros((num_recordings, num_classes), dtype=np.bool) # One-hot encoding of classes
-    #neptune.init('puszkarb/physionet2021')
+
     for leads in leads_set:
-    
+
         name = get_model_filename(leads)
 
         experiment = SummaryWriter()
@@ -107,75 +109,73 @@ def training_code(data_directory, model_directory):
 
         checkpoint_name = name[:-3] + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
         training_checkpoint = name[:-3] + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
-    
 
-    
+
+
         net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
-                forecast_length= forecast_length,
-                thetas_dims=thetas_dim,
-                nb_blocks_per_stack=nb_blocks_per_stack,
-                backcast_length=backcast_length,
-                hidden_layer_units=hidden,
-                share_weights_in_stack=False,
-                device=device,
-                classes=classes)
+                        forecast_length= forecast_length,
+                        thetas_dims=thetas_dim,
+                        nb_blocks_per_stack=nb_blocks_per_stack,
+                        backcast_length=backcast_length,
+                        hidden_layer_units=hidden,
+                        share_weights_in_stack=False,
+                        device=device,
+                        classes=classes)
         net.cuda()
         optimizer = optim.Adam(net.parameters())
 
 
-#############################################3
+        ################ CREATE HDF5 DATABASE #############################3
+        with h5py.File(f'cinc_database_{len(leads)}.hdf5', 'w') as dataset_file:
+            dset = dataset_file.create_dataset("signals", (num_recordings, len(leads), single_peak_length), dtype='f')
+            lset = dataset_file.create_dataset("labels", (num_classes,), dtype='i')
 
-        old_eval = 100
-        num_epochs = 1
-        for epoch in range(num_epochs):
             for i in range(num_recordings):
                 print('    {}/{}...'.format(i+1, num_recordings))
 
                 # Load header and recording.
                 header = load_header(header_files[i])
                 recording = np.array(load_recording(recording_files[i]), dtype=np.float32)
-                
-                recording_full = get_leads_values(header, recording, twelve_leads)
+
+                recording_full = get_leads_values(header, recording, leads)
                 current_labels = get_labels(header)
                 freq = get_frequency(header)
                 if freq != float(500):
                     recording_full = naf.equalize_signal_frequency(freq, recording_full)
-            
-                #x_base = list(range(len(recording_full[0])))
-                #fig = plt.figure(1, figsize=(12, 10))
-                #plt.grid()
-                print(recording_full)
-                #plt.title(str(i))
-                #plt.scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
-                #plt.savefig("/home/puszkar/signal-500.png")
-                #plt.close()
-                
-                recording_full = naf.apply_notch_filters(recording_full)
-                #x_base = list(range(len(recording_full[0])))
-                #fig = plt.figure(1, figsize=(12, 10))
-                #plt.grid()
-                #plt.title(str(i))
-                print(recording_full)
-                #plt.scatter(x_base[0:2000], recording_full[0][0:2000], color='b')
-                #plt.savefig("/home/puszkar/signal-notch.png")
-                #plt.close()
-            
+
+                recording_full = naf.one_file_training_data(recording_full, single_peak_length, device)
+
                 for label in current_labels:
                     if label in classes:
                         j = classes.index(label)
                         labels[i, j] = 1
 
-                new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval, epoch*num_recordings+i)
-                if new_eval < old_eval:
-                    old_eval = new_eval
-        
-    
+                dset[i] = recording_full
+
+            lset[:] = labels
+
+        database = h5py.File(f'cinc_database_{len(leads)}.hdf5', 'r')
+        print(database.keys())
+        print(database["signals"].shape)
+        print(database["signals"].dtype)
+
+        return
+        """
+        old_eval = 100
+        num_epochs = 1
+        for epoch in range(num_epochs):
+
+            new_eval = perform_training(net, optimizer, recording_full, forecast_length, backcast_length, batch_size, device, experiment, training_checkpoint, model_directory, labels[i], old_eval, epoch*num_recordings+i)
+            if new_eval < old_eval:
+                old_eval = new_eval
+
+
             filename = os.path.join(model_directory, name)
             print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
             print(filename)
             save(filename, net, optimizer, classes, leads)
-    
-    
+"""
+
 
 ################################################################################
 #
@@ -209,7 +209,7 @@ def load_model(model_directory, leads):
                 share_weights_in_stack=False,
                 device=device,
                 classes=checkpoint['classes'])
-    
+
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
     model.cuda()
@@ -227,7 +227,7 @@ def run_model(model, header, recording):
     features = naf.one_file_training_data(features, forecast_length, backcast_length, device)
     # Predict labels and probabilities.
     _, probabilities = model(features.clone().detach())
- 
+
     labels = np.asarray(probabilities.detach().cpu().numpy(), dtype=np.int)
 
     #probabilities = classifier.predict_proba(features)
@@ -301,7 +301,7 @@ def get_leads_values(header, recording, leads):
         i = available_leads.index(lead)
         indices.append(i)
     recording = recording[indices, :]
-    
+
     # Pre-process recordings.
     adc_gains = get_adc_gains(header, leads)
     print(adc_gains)
@@ -311,7 +311,7 @@ def get_leads_values(header, recording, leads):
     for i in range(num_leads):
         recording[i, :] = (recording[i, :] - baselines[i]) / adc_gains[i]
 
-    return recording 
+    return recording
 
 
 def train_full_grad_steps(data, device, net, optimizer, test_losses, training_checkpoint, size, global_step):
@@ -321,11 +321,11 @@ def train_full_grad_steps(data, device, net, optimizer, test_losses, training_ch
     each_epoch_plot = True
 
     for x_train_batch, y_train_batch in data:
-        
+
         local_step += 1
         optimizer.zero_grad()
         net.train()
-        _, forecast = net(x_train_batch.clone().detach())#.to(device)) #Dodaje od 
+        _, forecast = net(x_train_batch.clone().detach())#.to(device)) #Dodaje od
         m = nn.BCEWithLogitsLoss()
 
         loss = m(forecast, y_train_batch[0])#torch.zeros(size=(16,)))
@@ -335,13 +335,13 @@ def train_full_grad_steps(data, device, net, optimizer, test_losses, training_ch
 
         if local_step > 0 and local_step % size == 0:
             break
-    
+
     with torch.no_grad():
         print("Training batches passed: %d" % (local_step))
         print(f"Global step saved: {global_step}")
 
         naf.save(training_checkpoint, net, optimizer, global_step)
-    
+
     if local_step > 0 and local_step % size == 0:
         return global_step
 
@@ -351,9 +351,9 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
     test_losses = []
     the_lowest_error = [100]
 
-    
+
     data, x_train, y_train, x_test, y_test = naf.get_data_with_labels(recordings,forecast_length, backcast_length, batch_size, device, labels)
-    
+
 
     global_step = train_full_grad_steps(data, device, net, optimizer, test_losses, model_directory + training_checkpoint, x_train.shape[0], i)
 
@@ -366,7 +366,7 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
                                        the_lowest_error,
                                        device,
                                        experiment=experiment)
-                                                                                                  
+
     experiment.add_scalar(f'train_loss_{training_checkpoint}', train_eval, i)
 
 
@@ -375,12 +375,12 @@ def perform_training(net, optimizer, recordings, forecast_length, backcast_lengt
                                      net,
                                      test_losses,
                                      x_test,
-                                     y_test, 
+                                     y_test,
                                      the_lowest_error,
                                      device,
                                      experiment=experiment)
     experiment.add_scalar(f'eval_loss_{training_checkpoint}', new_eval, i)
-    
+
     print("\n New evaluation sccore: %f, ---->>>> old score: %f" % (new_eval, old_eval))
     #if new_eval < old_eval:
     #    print("in if")
