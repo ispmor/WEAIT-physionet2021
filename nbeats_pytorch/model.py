@@ -76,8 +76,9 @@ class NBeatsNet(nn.Module):
                 backcast = backcast.to(self.device) - b
                 forecast = forecast.to(self.device) + f
         
-        #m = torch.nn.Softmax(dim=0)
+        m = torch.nn.Softmax(dim=0)
         forecast = minmaxnorm(forecast)
+
         return backcast, forecast
 
 
@@ -210,10 +211,10 @@ class GenericBlock(Block):
         forecast = self.forecast_fc(theta_f)  # generic. 3.3.
 
 
-        forec = torch.sum(forecast, 1) ### DODANE
+        f = torch.sum(forecast, 1) ### DODANE
        # print(forecast.shape)
         
-        f = torch.sum(forec, -2)
+        #f = torch.sum(forec, -2)
 
         
         #h0, c0 = self.init_hidden(x)
@@ -229,6 +230,6 @@ class GenericBlock(Block):
         
         ## KONIEC DODANIA
         
-        forecast = f 
+        forecast = f
 
         return backcast, forecast

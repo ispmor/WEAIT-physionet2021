@@ -143,8 +143,9 @@ def one_file_training_data(recording, single_peak_length, cuda):
     else:
         for i in range(4):
             x.append(recording[:, 0:single_peak_length])
+            #dopełnić 0 z przodu aby była conajmniej 1 pełne okno
 
-    x = torch.tensor(x, device=cuda, dtype=torch.float)
+    x = np.array(x, dtype=np.float)
 
     return x
 

@@ -140,17 +140,19 @@ def training_code(data_directory, model_directory):
 
                     recording_full = naf.one_file_training_data(recording_full, single_peak_length, device)
 
+
+                    # wywalić niepotrzebne fory, zachować tylko ostatnią linię
                     for label in current_labels:
                         if label in classes:
                             j = classes.index(label)
                             labels[i, j] = 1
                             local_label = labels[i]
 
-                    new_windows = recording_full.detach().cpu().shape[0]
+                    new_windows = recording_full.shape[0]
                     dset.resize(dset.shape[0] + new_windows, axis=0)
-                    dset[-new_windows:] = recording_full.detach().cpu()
+                    dset[-new_windows:] = recording_full
 
-                    label_pack = [local_label for i in range(recording_full.detach().cpu().shape[0])]
+                    label_pack = [local_label for i in range(recording_full.shape[0])]
                     lset.resize(lset.shape[0] + new_windows, axis=0)
                     lset[-new_windows:] = label_pack
             database = h5py.File(f'cinc_database_{len(leads)}.h5', 'r')
@@ -160,13 +162,12 @@ def training_code(data_directory, model_directory):
             print(database["group1"].items())
             print(database["group1"]["label"].dtype)
 
-        loader_params = {'batch_size': 10, 'shuffle': True, 'num_workers': 1}
 
         dataset = HDF5Dataset('./', recursive=True, load_data=False,
                               data_cache_size=4, transform=None)
 
 
-        data_loader = torch_data.DataLoader(dataset, batch_size=10, shuffle=True, num_workers=6)
+        data_loader = torch_data.DataLoader(dataset, batch_size=20000, shuffle=True, num_workers=6)
         print("data_loader", data_loader)
         num_epochs = 10
         for epoch in range(num_epochs):
@@ -178,16 +179,16 @@ def training_code(data_directory, model_directory):
 
                 _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
                 m = nn.BCEWithLogitsLoss()
-
-                loss = m(forecast, y.to(device)[0])  # torch.zeros(size=(16,)))
+                loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
                 # loss = F.mse_loss(forecast, y_train_batch.clone().detach())#.to(device))
                 loss.backward()
                 optimizer.step()
 
-                if local_step > 0 and local_step % 100 == 0:
+                if local_step > 0 and local_step % 1 == 0:
                     print(local_step, "th iteration : ", loss)
 
             with torch.no_grad():
+                #tutaj walidacja
                 print("Epoch: %d Training batches passed: %d" % (epoch, local_step))
 
                 naf.save(training_checkpoint, net, optimizer, epoch)
