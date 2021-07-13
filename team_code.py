@@ -113,7 +113,8 @@ def training_code(data_directory, model_directory):
                         device=device,
                         classes=classes)
         net.cuda()
-        optimizer = optim.Adam(net.parameters(), lr=0.0001)
+        optimizer = optim.Adam(net.parameters(), lr=0.01, weight_decay=0.0001)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
         init_dataset = list(range(num_recordings))
         lengths = [int(len(init_dataset) * 0.8), len(init_dataset) - int(len(init_dataset) * 0.8)]
         data_training, data_validation = torch_data.random_split(init_dataset, lengths)
@@ -155,28 +156,27 @@ def training_code(data_directory, model_directory):
 
             mean = torch.mean(torch.stack(epoch_loss))
             print("Epoch: %d Training loss: %f" % (epoch, mean))
-            experiment.add_scalar(f'train_loss', mean, epoch)
+            experiment.add_scalar('train_loss', mean, epoch)
 
             with torch.no_grad():
+                # if epoch != 0 and epoch % 100 == 0:
+                epoch_loss = []
+                net.eval()
+                for x, y in validation_data_loader:
+                    _, forecast = net(x.to(device))  # .to(device))
+                    loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
+                    epoch_loss.append(loss)
 
-                if epoch != 0 and epoch % 100 == 0:
-                    epoch_loss = []
-                    for x, y in validation_data_loader:
-                        net.eval()
-                        _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
-                        m = nn.BCEWithLogitsLoss()
-                        loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
-                        epoch_loss.append(loss)
-
-                    mean = torch.mean(torch.stack(epoch_loss))
-                    experiment.add_scalar(f'validation_loss', mean, epoch)
-                    print("Epoch: %d Validation loss: %f" % (epoch, mean))
+                mean = torch.mean(torch.stack(epoch_loss))
+                experiment.add_scalar('validation_loss', mean, epoch)
+                print("Epoch: %d Validation loss: %f" % (epoch, mean))
 
                 naf.save(training_checkpoint, net, optimizer, epoch)
 
             filename = os.path.join(model_directory, name)
             print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
             save(filename, net, optimizer, classes, leads)
+            scheduler.step()
 
 
 ################################################################################
