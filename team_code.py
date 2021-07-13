@@ -118,9 +118,12 @@ def training_code(data_directory, model_directory):
 
         ################ CREATE HDF5 DATABASE #############################3
         if not os.path.isfile(f'cinc_database_{len(leads)}.h5'):
-            with h5py.File(f'cinc_database_{len(leads)}.h5', 'w') as dataset_file:
-                dset = dataset_file.create_dataset("data", (1, len(leads), single_peak_length), maxshape=(None, len(leads), single_peak_length), dtype='f')
-                lset = dataset_file.create_dataset("label", (1, num_classes), maxshape=(None, num_classes), dtype='i')
+            with h5py.File(f'cinc_database_{len(leads)}.h5', 'w') as h5file:
+
+                grp = h5file.create_group("group1")
+
+                dset = grp.create_dataset("data", (1, len(leads), single_peak_length), maxshape=(None, len(leads), single_peak_length), dtype='f', chunks=(1,len(leads), single_peak_length))
+                lset = grp.create_dataset("label", (1, num_classes), maxshape=(None, num_classes), dtype='f', chunks=(1, num_classes))
 
                 for i in range(num_recordings):
                     print('    {}/{}...'.format(i + 1, num_recordings))
@@ -154,16 +157,16 @@ def training_code(data_directory, model_directory):
         else:
             database = h5py.File(f'cinc_database_{len(leads)}.h5', 'r')
             print(database.keys())
-            print(database["data"].shape)
-            print(database["label"].dtype)
+            print(database["group1"].items())
+            print(database["group1"]["label"].dtype)
 
         loader_params = {'batch_size': 10, 'shuffle': True, 'num_workers': 1}
-        print("Prepariong dataset")
 
         dataset = HDF5Dataset('./', recursive=True, load_data=False,
-                              data_cache_size=1, transform=None)
+                              data_cache_size=4, transform=None)
 
-        data_loader = torch_data.DataLoader(dataset, **loader_params)
+
+        data_loader = torch_data.DataLoader(dataset, batch_size=10, shuffle=True, num_workers=6)
         print("data_loader", data_loader)
         num_epochs = 10
         for epoch in range(num_epochs):
@@ -172,18 +175,17 @@ def training_code(data_directory, model_directory):
                 local_step += 1
                 optimizer.zero_grad()
                 net.train()
-                print(x)
-                print(x.shape)
+
                 _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
                 m = nn.BCEWithLogitsLoss()
 
-                loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
+                loss = m(forecast, y.to(device)[0])  # torch.zeros(size=(16,)))
                 # loss = F.mse_loss(forecast, y_train_batch.clone().detach())#.to(device))
                 loss.backward()
                 optimizer.step()
 
                 if local_step > 0 and local_step % 100 == 0:
-                    print(i, "th iteration : ", loss)
+                    print(local_step, "th iteration : ", loss)
 
             with torch.no_grad():
                 print("Epoch: %d Training batches passed: %d" % (epoch, local_step))

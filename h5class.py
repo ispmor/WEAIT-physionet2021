@@ -24,26 +24,30 @@ class HDF5Dataset(data.Dataset):
         self.data_cache = {}
         self.data_cache_size = data_cache_size
         self.transform = transform
+        self.files = None
 
         # Search for all h5 files
         p = Path(file_path)
         assert (p.is_dir())
         if recursive:
-            files = sorted(p.glob('**/*.h5'))
+            self.files = sorted(p.glob('**/*.h5'))
         else:
-            files = sorted(p.glob('*.h5'))
-        if len(files) < 1:
+            self.files = sorted(p.glob('*.h5'))
+        if len(self.files) < 1:
             raise RuntimeError('No hdf5 datasets found')
 
-        for h5dataset_fp in files:
+        for h5dataset_fp in self.files:
             self._add_data_infos(str(h5dataset_fp.resolve()), load_data)
 
-        self.file = h5py.File(files[0], "r")
+    def open_hdf5(self):
+        self.file = h5py.File(self.files[0], "r")
 
     def __getitem__(self, index):
+        if not hasattr(self, 'file'):
+            self.open_hdf5()
         # get data
         x = self.get_data("data", index)
-        print(x)
+
         if self.transform:
             x = self.transform(x)
         else:
@@ -52,29 +56,28 @@ class HDF5Dataset(data.Dataset):
         # get label
         y = self.get_data("label", index)
         y = torch.from_numpy(np.array(y))
+
         return (x, y)
 
     def __len__(self):
-        return len(self.get_data_infos('data'))
+        return self.get_data_infos('data')[0]['shape'][0]
 
     def _add_data_infos(self, file_path, load_data):
         with h5py.File(file_path) as h5_file:
             # Walk through all groups, extracting datasets
-            # for gname, group in h5_file.items():
-            #    print(group)
-            #    print(type(group))
-            for dname, ds in h5_file.items():  # group.items():
-                # if data is not loaded its cache index is -1
-                idx = -1
-                if load_data:
-                    # add data to the data cache
-                    idx = self._add_to_cache(ds, file_path)
+            for gname, group in h5_file.items():
+                for dname, ds in group.items():
+                    # if data is not loaded its cache index is -1
+                    idx = -1
+                    if load_data:
+                        # add data to the data cache
+                        idx = self._add_to_cache(ds.value, file_path)
 
-                # type is derived from the name of the dataset; we expect the dataset
-                # name to have a name such as 'data' or 'label' to identify its type
-                # we also store the shape of the data in case we need it
-                self.data_info.append(
-                    {'file_path': file_path, 'type': dname, 'shape': ds.shape, 'cache_idx': idx})
+                    # type is derived from the name of the dataset; we expect the dataset
+                    # name to have a name such as 'data' or 'label' to identify its type
+                    # we also store the shape of the data in case we need it
+                    self.data_info.append(
+                        {'file_path': file_path, 'type': dname, 'shape': ds.shape, 'cache_idx': idx})
 
     def _load_data(self, file_path):
         """Load data to the cache given the file
@@ -84,16 +87,18 @@ class HDF5Dataset(data.Dataset):
         # with h5py.File(file_path) as h5_file:
         # for gname, group in h5_file.items():
         h5_file = self.file
-        for dname, ds in h5_file.items():  # group.items():
-            # add data to the data cache and retrieve
-            # the cache index
-            idx = self._add_to_cache(ds, file_path)
+        for gname, group in h5_file.items():  # group.items():
+            for dname, ds in group.items():
+                # add data to the data cache and retrieve
+                # the cache index
+                idx = self._add_to_cache(ds, file_path)
 
-            # find the beginning index of the hdf5 file we are looking for
-            file_idx = next(i for i, v in enumerate(self.data_info) if v['file_path'] == file_path)
+                # find the beginning index of the hdf5 file we are looking for
+                file_idx = next(i for i, v in enumerate(self.data_info) if v['file_path'] == file_path)
 
-            # the data info should have the same index since we loaded it in the same way
-            self.data_info[file_idx + idx]['cache_idx'] = idx
+                # the data info should have the same index since we loaded it in the same way
+                self.data_info[file_idx + idx]['cache_idx'] = idx
+
 
         # remove an element from data cache if size was exceeded
         if len(self.data_cache) > self.data_cache_size:
@@ -130,10 +135,10 @@ class HDF5Dataset(data.Dataset):
             dataset. This will make sure that the data is loaded in case it is
             not part of the data cache.
         """
-        fp = self.get_data_infos(type)[i]['file_path']
+        fp = self.get_data_infos(type)[0]['file_path']
         if fp not in self.data_cache:
             self._load_data(fp)
 
         # get new cache_idx assigned by _load_data_info
-        cache_idx = self.get_data_infos(type)[i]['cache_idx']
-        return self.data_cache[fp][cache_idx]
+        cache_idx = self.get_data_infos(type)[0]['cache_idx']
+        return self.data_cache[fp][cache_idx][i]
