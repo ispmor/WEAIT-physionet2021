@@ -142,13 +142,14 @@ def training_code(data_directory, model_directory):
             epoch_loss = []
             for x, y in training_data_loader:
                 local_step += 1
-                optimizer.zero_grad()
-                net.train()
 
+                net.train()
                 _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
                 loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
 
                 epoch_loss.append(loss)
+
+                optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
@@ -157,8 +158,9 @@ def training_code(data_directory, model_directory):
             experiment.add_scalar(f'train_loss', mean, epoch)
 
             with torch.no_grad():
-                epoch_loss = []
+
                 if epoch != 0 and epoch % 100 == 0:
+                    epoch_loss = []
                     for x, y in validation_data_loader:
                         net.eval()
                         _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
@@ -166,9 +168,9 @@ def training_code(data_directory, model_directory):
                         loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
                         epoch_loss.append(loss)
 
-                mean = torch.mean(torch.stack(epoch_loss))
-                experiment.add_scalar(f'validation_loss', mean, epoch)
-                print("Epoch: %d Validation loss: %f" % (epoch, mean))
+                    mean = torch.mean(torch.stack(epoch_loss))
+                    experiment.add_scalar(f'validation_loss', mean, epoch)
+                    print("Epoch: %d Validation loss: %f" % (epoch, mean))
 
                 naf.save(training_checkpoint, net, optimizer, epoch)
 
