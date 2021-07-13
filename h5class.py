@@ -28,11 +28,14 @@ class HDF5Dataset(data.Dataset):
 
         # Search for all h5 files
         p = Path(file_path)
-        assert (p.is_dir())
-        if recursive:
-            self.files = sorted(p.glob('**/*.h5'))
-        else:
-            self.files = sorted(p.glob('*.h5'))
+        if p.is_dir():
+            if recursive:
+                self.files = sorted(p.glob('**/*.h5'))
+            else:
+                self.files = sorted(p.glob('*.h5'))
+        elif p.is_file():
+            self.files = [p]
+
         if len(self.files) < 1:
             raise RuntimeError('No hdf5 datasets found')
 

@@ -45,7 +45,7 @@ thetas_dim = exp["thetas_dim"]
 
 cuda0 = torch.cuda.set_device(0)
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
+#torch.set_default_tensor_type('torch.cuda.FloatTensor')
 torch.pin_memory = False
 
 
@@ -113,83 +113,62 @@ def training_code(data_directory, model_directory):
                         device=device,
                         classes=classes)
         net.cuda()
-        optimizer = optim.Adam(net.parameters())
-        database = None
+        optimizer = optim.Adam(net.parameters(), lr=0.0001)
+        init_dataset = list(range(num_recordings))
+        lengths = [int(len(init_dataset) * 0.8), len(init_dataset) - int(len(init_dataset) * 0.8)]
+        data_training, data_validation = torch_data.random_split(init_dataset, lengths)
 
         ################ CREATE HDF5 DATABASE #############################3
-        if not os.path.isfile(f'cinc_database_{len(leads)}.h5'):
-            with h5py.File(f'cinc_database_{len(leads)}.h5', 'w') as h5file:
+        if not os.path.isfile(f'cinc_database_{len(leads)}_training.h5'):
+            create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, leads, isTraining=True)
+        if not os.path.isfile(f'cinc_database_{len(leads)}_validation.h5'):
+            create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, leads, isTraining=False)
 
-                grp = h5file.create_group("group1")
+        training_dataset = HDF5Dataset('./' + f'cinc_database_{len(leads)}_training.h5', recursive=False,
+                                       load_data=False,
+                                       data_cache_size=4, transform=None)
+        validation_dataset = HDF5Dataset('./' + f'cinc_database_{len(leads)}_validation.h5', recursive=False,
+                                         load_data=False,
+                                         data_cache_size=4, transform=None)
 
-                dset = grp.create_dataset("data", (1, len(leads), single_peak_length), maxshape=(None, len(leads), single_peak_length), dtype='f', chunks=(1,len(leads), single_peak_length))
-                lset = grp.create_dataset("label", (1, num_classes), maxshape=(None, num_classes), dtype='f', chunks=(1, num_classes))
+        training_data_loader = torch_data.DataLoader(training_dataset, batch_size=20000, shuffle=True, num_workers=6)
+        validation_data_loader = torch_data.DataLoader(validation_dataset, batch_size=20000, shuffle=True, num_workers=6)
 
-                for i in range(num_recordings):
-                    print('    {}/{}...'.format(i + 1, num_recordings))
-
-                    # Load header and recording.
-                    header = load_header(header_files[i])
-                    recording = np.array(load_recording(recording_files[i]), dtype=np.float32)
-
-                    recording_full = get_leads_values(header, recording, leads)
-                    current_labels = get_labels(header)
-                    freq = get_frequency(header)
-                    if freq != float(500):
-                        recording_full = naf.equalize_signal_frequency(freq, recording_full)
-
-                    recording_full = naf.one_file_training_data(recording_full, single_peak_length, device)
-
-
-                    # wywalić niepotrzebne fory, zachować tylko ostatnią linię
-                    for label in current_labels:
-                        if label in classes:
-                            j = classes.index(label)
-                            labels[i, j] = 1
-                            local_label = labels[i]
-
-                    new_windows = recording_full.shape[0]
-                    dset.resize(dset.shape[0] + new_windows, axis=0)
-                    dset[-new_windows:] = recording_full
-
-                    label_pack = [local_label for i in range(recording_full.shape[0])]
-                    lset.resize(lset.shape[0] + new_windows, axis=0)
-                    lset[-new_windows:] = label_pack
-            database = h5py.File(f'cinc_database_{len(leads)}.h5', 'r')
-        else:
-            database = h5py.File(f'cinc_database_{len(leads)}.h5', 'r')
-            print(database.keys())
-            print(database["group1"].items())
-            print(database["group1"]["label"].dtype)
-
-
-        dataset = HDF5Dataset('./', recursive=True, load_data=False,
-                              data_cache_size=4, transform=None)
-
-
-        data_loader = torch_data.DataLoader(dataset, batch_size=20000, shuffle=True, num_workers=6)
-        print("data_loader", data_loader)
-        num_epochs = 10
+        print("data_loader", training_data_loader)
+        num_epochs = 1000
+        m = nn.BCEWithLogitsLoss()
         for epoch in range(num_epochs):
             local_step = 0
-            for x, y in data_loader:
+            epoch_loss = []
+            for x, y in training_data_loader:
                 local_step += 1
                 optimizer.zero_grad()
                 net.train()
 
                 _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
-                m = nn.BCEWithLogitsLoss()
                 loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
-                # loss = F.mse_loss(forecast, y_train_batch.clone().detach())#.to(device))
+
+                epoch_loss.append(loss)
                 loss.backward()
                 optimizer.step()
 
-                if local_step > 0 and local_step % 1 == 0:
-                    print(local_step, "th iteration : ", loss)
+            mean = torch.mean(torch.stack(epoch_loss))
+            print("Epoch: %d Training loss: %f" % (epoch, mean))
+            experiment.add_scalar(f'train_loss', mean, epoch)
 
             with torch.no_grad():
-                #tutaj walidacja
-                print("Epoch: %d Training batches passed: %d" % (epoch, local_step))
+                epoch_loss = []
+                if epoch != 0 and epoch % 100 == 0:
+                    for x, y in validation_data_loader:
+                        net.eval()
+                        _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
+                        m = nn.BCEWithLogitsLoss()
+                        loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
+                        epoch_loss.append(loss)
+
+                mean = torch.mean(torch.stack(epoch_loss))
+                experiment.add_scalar(f'validation_loss', mean, epoch)
+                print("Epoch: %d Validation loss: %f" % (epoch, mean))
 
                 naf.save(training_checkpoint, net, optimizer, epoch)
 
@@ -203,6 +182,54 @@ def training_code(data_directory, model_directory):
 # File I/O functions
 #
 ################################################################################
+# create HDF5 datase
+def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, classes, leads, isTraining=True):
+    group = None
+    if isTraining:
+        group = 'training'
+    else:
+        group = 'validation'
+
+    with h5py.File(f'cinc_database_{len(leads)}_{group}.h5', 'w') as h5file:
+
+        grp = h5file.create_group(group)
+
+        dset = grp.create_dataset("data", (1, len(leads), single_peak_length),
+                                  maxshape=(None, len(leads), single_peak_length), dtype='f',
+                                  chunks=(1, len(leads), single_peak_length))
+        lset = grp.create_dataset("label", (1, num_classes), maxshape=(None, num_classes), dtype='f',
+                                  chunks=(1, num_classes))
+        counter = 0
+        for i in num_recordings:
+            print('    {}/{}...'.format(counter + 1, len(num_recordings)))
+            counter += 1
+            # Load header and recording.
+            header = load_header(header_files[i])
+            recording = np.array(load_recording(recording_files[i]), dtype=np.float32)
+
+            recording_full = get_leads_values(header, recording, leads)
+            current_labels = get_labels(header)
+            freq = get_frequency(header)
+            if freq != float(500):
+                recording_full = naf.equalize_signal_frequency(freq, recording_full)
+
+            recording_full = naf.one_file_training_data(recording_full, single_peak_length, device)
+            local_label = np.zeros((num_classes,), dtype=np.bool)
+            for label in current_labels:
+                if label in classes:
+                    j = classes.index(label)
+                    local_label[j]
+
+            new_windows = recording_full.shape[0]
+            dset.resize(dset.shape[0] + new_windows, axis=0)
+            dset[-new_windows:] = recording_full
+
+            label_pack = [local_label for i in range(recording_full.shape[0])]
+            lset.resize(lset.shape[0] + new_windows, axis=0)
+            lset[-new_windows:] = label_pack
+
+    print(f'Successfully created {group} dataset')
+
 
 # Save your trained models.
 def save(checkpoint_name, model, optimiser, classes, leads):
