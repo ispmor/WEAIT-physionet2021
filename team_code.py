@@ -117,7 +117,7 @@ def training_code(data_directory, model_directory):
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
         init_dataset = list(range(num_recordings))
         lengths = [int(len(init_dataset) * 0.8), len(init_dataset) - int(len(init_dataset) * 0.8)]
-        data_training, data_validation = torch_data.random_split(init_dataset, lengths)
+        data_training, data_validation = torch_data.random_split(init_dataset, lengths, seed=17)
 
         ################ CREATE HDF5 DATABASE #############################3
         if not os.path.isfile(f'cinc_database_{len(leads)}_training.h5'):
@@ -156,7 +156,8 @@ def training_code(data_directory, model_directory):
 
             mean = torch.mean(torch.stack(epoch_loss))
             print("Epoch: %d Training loss: %f" % (epoch, mean))
-            experiment.add_scalar('train_loss', mean, epoch)
+            name = 'train_loss_' + str(len(leads))
+            experiment.add_scalar(name, mean, epoch)
 
             with torch.no_grad():
                 # if epoch != 0 and epoch % 100 == 0:
@@ -168,7 +169,8 @@ def training_code(data_directory, model_directory):
                     epoch_loss.append(loss)
 
                 mean = torch.mean(torch.stack(epoch_loss))
-                experiment.add_scalar('validation_loss', mean, epoch)
+                name = 'validation_loss_' + str(len(leads))
+                experiment.add_scalar(name, mean, epoch)
                 print("Epoch: %d Validation loss: %f" % (epoch, mean))
 
                 naf.save(training_checkpoint, net, optimizer, epoch)
