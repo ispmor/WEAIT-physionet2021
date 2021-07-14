@@ -36,15 +36,15 @@ class NBeatsNet(nn.Module):
         self.parameters = []
         self.device = device
         print(f'| N-Beats')
-        for stack_id in range(len(self.stack_types)):
-            self.stacks.append(self.create_stack(stack_id))
+        for stack_id in range(10):#(len(self.stack_types)):
+            self.stacks.append(self.create_stack(stack_id))#stack_id))
         self.parameters = nn.ParameterList(self.parameters)
         self.softmax = nn.Softmax(dim=0)
         self.to(self.device)
         
 
     def create_stack(self, stack_id):
-        stack_type = self.stack_types[stack_id]
+        stack_type = self.stack_types[0]#[stack_id]
         print(f'| --  Stack {stack_type.title()} (#{stack_id}) (share_weights_in_stack={self.share_weights_in_stack})')
         blocks = []
         for block_id in range(self.nb_blocks_per_stack):
@@ -52,7 +52,7 @@ class NBeatsNet(nn.Module):
             if self.share_weights_in_stack and block_id != 0:
                 block = blocks[-1]  # pick up the last one when we share weights.
             else:
-                block = block_init(self.hidden_layer_units, self.thetas_dim[stack_id],
+                block = block_init(self.hidden_layer_units, self.thetas_dim[0],#stack_id],
                                    self.device, self.backcast_length, self.forecast_length, classes=len(self.classes))
                 self.parameters.extend(block.parameters())
             print(f'     | -- {block}')
@@ -69,6 +69,7 @@ class NBeatsNet(nn.Module):
             return GenericBlock
 
     def forward(self, backcast):
+        backcast = squeeze_last_dim(backcast)
         forecast = torch.zeros(size=(len(self.classes),)) #(size=(backcast.size()[0], backcast.size()[1], 16,))#self.forecast_length,))  # maybe batch size here. ZMIENIANE!!!
         for stack_id in range(len(self.stacks)):
             for block_id in range(len(self.stacks[stack_id])):
@@ -77,9 +78,15 @@ class NBeatsNet(nn.Module):
                 forecast = forecast.to(self.device) + f
         
         m = torch.nn.Softmax(dim=0)
-        forecast = minmaxnorm(forecast)
+        #forecast = minmaxnorm(forecast)
 
         return backcast, forecast
+
+def squeeze_last_dim(tensor):
+    if len(tensor.shape) == 3 and tensor.shape[-1] == 1: # (128, 10, 1) => (128, 10).
+        return tensor[..., 0]
+    return tensor
+
 
 
 def seasonality_model(thetas, t, device):
@@ -212,20 +219,7 @@ class GenericBlock(Block):
 
 
         f = torch.sum(forecast, 1) ### DODANE
-       # print(forecast.shape)
-        
-        #f = torch.sum(forec, -2)
 
-        
-        #h0, c0 = self.init_hidden(x)
-
-        #out, (hn, cn) = self.lstm(x, (h0, c0))
-        #out = self.fc(out[:, -1, :])
-        
-     
-        #forec = torch.sum(out, 0)
-        #f = torch.sum(forec, -2)
-        
         
         
         ## KONIEC DODANIA

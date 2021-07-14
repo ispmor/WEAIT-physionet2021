@@ -98,10 +98,8 @@ def training_code(data_directory, model_directory):
 
         experiment = SummaryWriter()
 
-        checkpoint_name = name[
-                          :-3] + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
-        training_checkpoint = name[
-                              :-3] + "_training" + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
+        checkpoint_name = name[:-3] + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
+        training_checkpoint = name[:-3] + "_training" + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
 
         net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
                         forecast_length=forecast_length,
@@ -117,7 +115,8 @@ def training_code(data_directory, model_directory):
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
         init_dataset = list(range(num_recordings))
         lengths = [int(len(init_dataset) * 0.8), len(init_dataset) - int(len(init_dataset) * 0.8)]
-        data_training, data_validation = torch_data.random_split(init_dataset, lengths, seed=17)
+        torch.manual_seed(17)
+        data_training, data_validation = torch_data.random_split(init_dataset, lengths)
 
         ################ CREATE HDF5 DATABASE #############################3
         if not os.path.isfile(f'cinc_database_{len(leads)}_training.h5'):
@@ -131,19 +130,22 @@ def training_code(data_directory, model_directory):
         validation_dataset = HDF5Dataset('./' + f'cinc_database_{len(leads)}_validation.h5', recursive=False,
                                          load_data=False,
                                          data_cache_size=4, transform=None)
-
-        training_data_loader = torch_data.DataLoader(training_dataset, batch_size=20000, shuffle=True, num_workers=6)
-        validation_data_loader = torch_data.DataLoader(validation_dataset, batch_size=20000, shuffle=True, num_workers=6)
+        print("Przed trainnig data loaderem")
+        training_data_loader = torch_data.DataLoader(training_dataset, batch_size=5000, shuffle=True, num_workers=6)
+        print("Przed data loader walidacyjnym ")
+        validation_data_loader = torch_data.DataLoader(validation_dataset, batch_size=5000, shuffle=True, num_workers=6)
 
         print("data_loader", training_data_loader)
-        num_epochs = 1000
+        num_epochs = 100
         m = nn.BCEWithLogitsLoss()
+        print("Przed ep[okami")
         for epoch in range(num_epochs):
             local_step = 0
             epoch_loss = []
             for x, y in training_data_loader:
-                local_step += 1
 
+                local_step += 1
+                print("Batch number:", local_step)
                 net.train()
                 _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
                 loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
@@ -274,11 +276,12 @@ def run_model(model, header, recording):
     classes = model.classes
     leads = model.leads
 
-    features = get_leads_values(header, recording, leads)
+    features = get_leads_values(header, recording.astype(np.float), leads)
 
-    features = naf.one_file_training_data(features, forecast_length, backcast_length, device)
+    features = torch.Tensor(naf.one_file_training_data(features, single_peak_length, device))
     # Predict labels and probabilities.
-    _, probabilities = model(features.clone().detach())
+    temp = features[0]
+    _, probabilities = model(temp)
 
     labels = np.asarray(probabilities.detach().cpu().numpy(), dtype=np.int)
 
