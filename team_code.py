@@ -122,7 +122,7 @@ def training_code(data_directory, model_directory):
         if not os.path.isfile(f'cinc_database_{len(leads)}_training.h5'):
             create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, leads, isTraining=True)
         if not os.path.isfile(f'cinc_database_{len(leads)}_validation.h5'):
-            create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, leads, isTraining=False)
+            create_hdf5_db(data_validation, num_classes, header_files, recording_files, classes, leads, isTraining=False)
 
         training_dataset = HDF5Dataset('./' + f'cinc_database_{len(leads)}_training.h5', recursive=False,
                                        load_data=False,
