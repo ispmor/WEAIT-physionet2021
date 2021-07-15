@@ -74,16 +74,23 @@ def training_code(data_directory, model_directory):
     print('Extracting classes...')
 
     classes = set()
+    classes_numbers = dict()
     for header_file in header_files:
         header = load_header(header_file)
-        classes |= set(get_labels(header))
+        classes_from_header = get_labels(header)
+        classes |= set(classes_from_header)
+        for c in classes_from_header:
+            if c in classes_numbers:
+                classes_numbers[c] += 1
+            else:
+                classes_numbers[c] = 1
     if all(is_integer(x) for x in classes):
         classes = sorted(classes, key=lambda x: int(x))  # Sort classes numerically if numbers.
     else:
         classes = sorted(classes)  # Sort classes alphanumerically otherwise.
     num_classes = len(classes)
     print(classes)
-
+    weights = torch.tensor([float(classes_numbers[c] / num_recordings) for c in classes ], device=device)
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
 
@@ -149,6 +156,7 @@ def training_code(data_directory, model_directory):
                 net.train()
                 _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
                 loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
+                loss = (loss * weights).mean()
 
                 epoch_loss.append(loss)
 
@@ -283,9 +291,9 @@ def run_model(model, header, recording):
 
     features = torch.Tensor(naf.one_file_training_data(features, single_peak_length, device))
     # Predict labels and probabilities.
-    temp = features[0]
-    _, probabilities = model(temp)
+    _, probabilities = model(features)
 
+    probabilities = torch.sum(probabilities, 0)
     labels = np.asarray(probabilities.detach().cpu().numpy(), dtype=np.int)
 
     # probabilities = classifier.predict_proba(features)
