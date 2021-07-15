@@ -158,21 +158,24 @@ def training_code(data_directory, model_directory):
 
             mean = torch.mean(torch.stack(epoch_loss))
             print("Epoch: %d Training loss: %f" % (epoch, mean))
-            name = 'train_loss_' + str(len(leads))
-            experiment.add_scalar(name, mean, epoch)
+            name_exp = 'train_loss_' + str(len(leads))
+            experiment.add_scalar(name_exp, mean, epoch)
 
             with torch.no_grad():
+                print("No grad")
                 # if epoch != 0 and epoch % 100 == 0:
                 epoch_loss = []
                 net.eval()
+                print("Net in eval mode")
                 for x, y in validation_data_loader:
+                    print("Step in validation loop")
                     _, forecast = net(x.to(device))  # .to(device))
                     loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
                     epoch_loss.append(loss)
 
                 mean = torch.mean(torch.stack(epoch_loss))
-                name = 'validation_loss_' + str(len(leads))
-                experiment.add_scalar(name, mean, epoch)
+                name_exp = 'validation_loss_' + str(len(leads))
+                experiment.add_scalar(name_exp, mean, epoch)
                 print("Epoch: %d Validation loss: %f" % (epoch, mean))
 
                 naf.save(training_checkpoint, net, optimizer, epoch)
