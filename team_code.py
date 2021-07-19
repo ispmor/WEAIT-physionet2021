@@ -48,6 +48,8 @@ device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('
 #torch.set_default_tensor_type('torch.cuda.FloatTensor')
 torch.pin_memory = False
 
+classes_numbers = dict()
+class_files_numbers = dict()
 
 ################################################################################
 #
@@ -74,23 +76,39 @@ def training_code(data_directory, model_directory):
     print('Extracting classes...')
 
     classes = set()
-    classes_numbers = dict()
+    multi_label_counter_1 = 0
+    multi_label_counter_2 = 0
+    multi_label_counter_3 = 0
+    single_label_counter = 0
     for header_file in header_files:
         header = load_header(header_file)
         classes_from_header = get_labels(header)
+        if len(classes_from_header) > 3:
+            multi_label_counter_3 += 1
+        elif len(classes_from_header) > 2:
+            multi_label_counter_2 += 1
+        elif len(classes_from_header) > 1:
+            multi_label_counter_1 += 1
+        else:
+            single_label_counter += 1
+
         classes |= set(classes_from_header)
         for c in classes_from_header:
-            if c in classes_numbers:
-                classes_numbers[c] += 1
+            if c in class_files_numbers:
+                class_files_numbers[c] += 1
             else:
-                classes_numbers[c] = 1
+                class_files_numbers[c] = 1
+
     if all(is_integer(x) for x in classes):
         classes = sorted(classes, key=lambda x: int(x))  # Sort classes numerically if numbers.
     else:
         classes = sorted(classes)  # Sort classes alphanumerically otherwise.
     num_classes = len(classes)
     print(classes)
-    weights = torch.tensor([float(classes_numbers[c] / num_recordings) for c in classes ], device=device)
+    print(class_files_numbers)
+
+
+
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
 
@@ -122,12 +140,18 @@ def training_code(data_directory, model_directory):
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
         init_dataset = list(range(num_recordings))
         lengths = [int(len(init_dataset) * 0.8), len(init_dataset) - int(len(init_dataset) * 0.8)]
-        torch.manual_seed(17)
-        data_training, data_validation = torch_data.random_split(init_dataset, lengths)
+        torch.manual_seed(19)
 
+        data_training, data_validation = torch_data.random_split(init_dataset, lengths)
+        weights = None
         ################ CREATE HDF5 DATABASE #############################3
         if not os.path.isfile(f'cinc_database_{len(leads)}_training.h5'):
             create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, leads, isTraining=True)
+            summed_classes = sum(classes_numbers.values())
+            sorted_classes_numbers = dict(sorted(classes_numbers.items(), key=lambda x:int(x[0])))
+            weights = torch.tensor([c / summed_classes for c in sorted_classes_numbers.values()], device=device)
+            for w in weights:
+                print(w)
         if not os.path.isfile(f'cinc_database_{len(leads)}_validation.h5'):
             create_hdf5_db(data_validation, num_classes, header_files, recording_files, classes, leads, isTraining=False)
 
@@ -222,6 +246,8 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             counter += 1
             # Load header and recording.
             header = load_header(header_files[i])
+            classes_from_header = get_labels(header)
+
             recording = np.array(load_recording(recording_files[i]), dtype=np.float32)
 
             recording_full = get_leads_values(header, recording, leads)
@@ -244,6 +270,13 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             label_pack = [local_label for i in range(recording_full.shape[0])]
             lset.resize(lset.shape[0] + new_windows, axis=0)
             lset[-new_windows:] = label_pack
+
+            for c in classes_from_header:
+                for i in range(new_windows):
+                    if c in classes_numbers:
+                        classes_numbers[c] += 1
+                    else:
+                        classes_numbers[c] = 1
 
     print(f'Successfully created {group} dataset')
 
@@ -293,13 +326,15 @@ def run_model(model, header, recording):
     # Predict labels and probabilities.
     _, probabilities = model(features)
 
-    probabilities = torch.sum(probabilities, 0)
-    labels = np.asarray(probabilities.detach().cpu().numpy(), dtype=np.int)
+
+    probabilities_mean = torch.mean(probabilities, 0)
+
+    labels = np.asarray(probabilities_mean.detach().cpu().numpy(), dtype=np.int)
 
     # probabilities = classifier.predict_proba(features)
     # probabilities = np.asarray(probabilities, dtype=np.float32)[:, 0, 1]
 
-    return classes, labels, probabilities.detach().cpu().numpy()
+    return classes, labels, probabilities_mean.detach().cpu().numpy()
 
 
 # Define the filename(s) for the trained models. This function is not required. You can change or remove it.

@@ -6,7 +6,6 @@ from torch.nn import functional as F
 import pdb
 
 
-
 class NBeatsNet(nn.Module):
     SEASONALITY_BLOCK = 'seasonality'
     TREND_BLOCK = 'trend'
@@ -20,11 +19,11 @@ class NBeatsNet(nn.Module):
                  backcast_length=10,
                  thetas_dims=(4, 8),
                  share_weights_in_stack=False,
-                 hidden_layer_units=256, 
-                 classes = []):
+                 hidden_layer_units=256,
+                 classes=[]):
         super(NBeatsNet, self).__init__()
         self.classes = classes
-        self.leads = [] 
+        self.leads = []
         self.forecast_length = forecast_length
         self.backcast_length = backcast_length
         self.hidden_layer_units = hidden_layer_units
@@ -36,15 +35,14 @@ class NBeatsNet(nn.Module):
         self.parameters = []
         self.device = device
         print(f'| N-Beats')
-        for stack_id in range(10):#(len(self.stack_types)):
-            self.stacks.append(self.create_stack(stack_id))#stack_id))
+        for stack_id in range(10):  # (len(self.stack_types)):
+            self.stacks.append(self.create_stack(stack_id))  # stack_id))
         self.parameters = nn.ParameterList(self.parameters)
-        self.softmax = nn.Softmax(dim=0)
+        self.sigmoid = torch.nn.Sigmoid()
         self.to(self.device)
-        
 
     def create_stack(self, stack_id):
-        stack_type = self.stack_types[0]#[stack_id]
+        stack_type = self.stack_types[0]  # [stack_id]
         print(f'| --  Stack {stack_type.title()} (#{stack_id}) (share_weights_in_stack={self.share_weights_in_stack})')
         blocks = []
         for block_id in range(self.nb_blocks_per_stack):
@@ -52,7 +50,7 @@ class NBeatsNet(nn.Module):
             if self.share_weights_in_stack and block_id != 0:
                 block = blocks[-1]  # pick up the last one when we share weights.
             else:
-                block = block_init(self.hidden_layer_units, self.thetas_dim[0],#stack_id],
+                block = block_init(self.hidden_layer_units, self.thetas_dim[0],  # stack_id],
                                    self.device, self.backcast_length, self.forecast_length, classes=len(self.classes))
                 self.parameters.extend(block.parameters())
             print(f'     | -- {block}')
@@ -70,23 +68,23 @@ class NBeatsNet(nn.Module):
 
     def forward(self, backcast):
         backcast = squeeze_last_dim(backcast)
-        forecast = torch.zeros(size=(len(self.classes),)) #(size=(backcast.size()[0], backcast.size()[1], 16,))#self.forecast_length,))  # maybe batch size here. ZMIENIANE!!!
+        forecast = torch.zeros(size=(
+        len(self.classes),))  # (size=(backcast.size()[0], backcast.size()[1], 16,))#self.forecast_length,))  # maybe batch size here. ZMIENIANE!!!
         for stack_id in range(len(self.stacks)):
             for block_id in range(len(self.stacks[stack_id])):
                 b, f = self.stacks[stack_id][block_id](backcast)
                 backcast = backcast.to(self.device) - b
                 forecast = forecast.to(self.device) + f
-        
-        m = torch.nn.Softmax(dim=0)
-        #forecast = minmaxnorm(forecast)
+
+        forecast = self.sigmoid(forecast)
 
         return backcast, forecast
 
+
 def squeeze_last_dim(tensor):
-    if len(tensor.shape) == 3 and tensor.shape[-1] == 1: # (128, 10, 1) => (128, 10).
+    if len(tensor.shape) == 3 and tensor.shape[-1] == 1:  # (128, 10, 1) => (128, 10).
         return tensor[..., 0]
     return tensor
-
 
 
 def seasonality_model(thetas, t, device):
@@ -98,12 +96,14 @@ def seasonality_model(thetas, t, device):
     S = torch.cat([s1, s2])
     return thetas.mm(S.to(device))
 
+
 def minmaxnorm(forecast):
     mi = forecast.min()
     ma = forecast.max()
     forecast = (forecast - mi) / (ma - mi)
     return forecast
-    
+
+
 def trend_model(thetas, t, device):
     p = thetas.size()[-1]
     assert p <= 4, 'thetas_dim is too big.'
@@ -120,7 +120,8 @@ def linspace(backcast_length, forecast_length):
 
 class Block(nn.Module):
 
-    def __init__(self, units, thetas_dim, device, backcast_length=10, forecast_length=5, share_thetas=False, classes=16):
+    def __init__(self, units, thetas_dim, device, backcast_length=10, forecast_length=5, share_thetas=False,
+                 classes=16):
         super(Block, self).__init__()
         self.units = units
         self.thetas_dim = thetas_dim
@@ -134,7 +135,7 @@ class Block(nn.Module):
         self.device = device
         self.backcast_linspace, self.forecast_linspace = linspace(backcast_length, forecast_length)
         self.classes = classes
-        
+
         if share_thetas:
             self.theta_f_fc = self.theta_b_fc = nn.Linear(units, thetas_dim)
         else:
@@ -143,7 +144,7 @@ class Block(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.fc1(x.to(self.device)))
-        
+
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
         x = F.relu(self.fc4(x))
@@ -189,18 +190,17 @@ class GenericBlock(Block):
 
         hidden_dim = 512
         layer_dim = 8
-        
-        
+
         self.backcast_fc = nn.Linear(thetas_dim, backcast_length)
-        self.forecast_fc = nn.Linear(thetas_dim, self.classes)#forecast_length)
+        self.forecast_fc = nn.Linear(thetas_dim, self.classes)  # forecast_length)
         self.fc = nn.Linear(hidden_dim, classes)
         self.lstm = nn.LSTM(self.forecast_length, hidden_dim, layer_dim)
-        #LSTMClassifier(input_dim, hidden_dim, layer_dim, output_dim)
+        # LSTMClassifier(input_dim, hidden_dim, layer_dim, output_dim)
         self.batch_size = None
         self.hidden = None
         self.hidden_dim = hidden_dim
         self.layer_dim = layer_dim
-    
+
     def init_hidden(self, x):
         h0 = torch.zeros(self.layer_dim, x.size(1), self.hidden_dim)
         c0 = torch.zeros(self.layer_dim, x.size(1), self.hidden_dim)
@@ -209,21 +209,18 @@ class GenericBlock(Block):
     def forward(self, x):
         # no constraint for generic arch.
         x = super(GenericBlock, self).forward(x)
-        #print(x.shape)
+        # print(x.shape)
 
         theta_b = F.relu(self.theta_b_fc(x))
-        theta_f = F.relu(self.theta_f_fc(x)) #tutaj masz thetas_dim rozmiar 
+        theta_f = F.relu(self.theta_f_fc(x))  # tutaj masz thetas_dim rozmiar
 
         backcast = self.backcast_fc(theta_b)  # generic. 3.3.
         forecast = self.forecast_fc(theta_f)  # generic. 3.3.
 
+        f = torch.sum(forecast, 1)  ### DODANE
 
-        f = torch.sum(forecast, 1) ### DODANE
-
-        
-        
         ## KONIEC DODANIA
-        
+
         forecast = f
 
         return backcast, forecast

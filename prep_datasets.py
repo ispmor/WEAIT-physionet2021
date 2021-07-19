@@ -41,7 +41,7 @@ if __name__ == '__main__':
     num_classes = len(classes)
 
     for key, value in class_to_file.items():
-        c = int(len(value) * 0.2)
+        c = int(len(value) * 0.1)
         test_data = random.sample(value, c)
         print(c)
        
