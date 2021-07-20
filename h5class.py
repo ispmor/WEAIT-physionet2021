@@ -18,13 +18,14 @@ class HDF5Dataset(data.Dataset):
         transform: PyTorch transform to apply to every data instance (default=None).
     """
 
-    def __init__(self, file_path, recursive, load_data, data_cache_size=3, transform=None):
+    def __init__(self, file_path, recursive, load_data, data_cache_size=3, transform=None, leads=np.zeros(1)):
         super().__init__()
         self.data_info = []
         self.data_cache = {}
         self.data_cache_size = data_cache_size
         self.transform = transform
         self.files = None
+        self.leads = leads
 
         # Search for all h5 files
         p = Path(file_path)
@@ -144,4 +145,7 @@ class HDF5Dataset(data.Dataset):
 
         # get new cache_idx assigned by _load_data_info
         cache_idx = self.get_data_infos(type)[0]['cache_idx']
-        return self.data_cache[fp][cache_idx][i]
+        if type in "data":
+            return self.data_cache[fp][cache_idx][i][self.leads]
+        else:
+            return self.data_cache[fp][cache_idx][i]

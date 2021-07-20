@@ -6,7 +6,8 @@ default_net_params = dict(
     backcast_multiplier=6,
     hidden_layer_units=16,
     nb_blocks_per_stack=3,
-    thetas_dim=[7, 8]
+    thetas_dim=[7, 8],
+    stacks_number=10
 )
 
 exp_net_params = dict(
@@ -18,7 +19,8 @@ exp_net_params = dict(
     hidden_layer_units=32,
     nb_blocks_per_stack=3,
     thetas_dim=[16, 16],
-    single_peak_length=500
+    single_peak_length=500,
+    stacks_number=10
 )
 
 epoch_limit = 25

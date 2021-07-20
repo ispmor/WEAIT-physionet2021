@@ -20,7 +20,8 @@ class NBeatsNet(nn.Module):
                  thetas_dims=(4, 8),
                  share_weights_in_stack=False,
                  hidden_layer_units=256,
-                 classes=[]):
+                 classes=[],
+                 stacks_number=10):
         super(NBeatsNet, self).__init__()
         self.classes = classes
         self.leads = []
@@ -34,8 +35,9 @@ class NBeatsNet(nn.Module):
         self.thetas_dim = thetas_dims
         self.parameters = []
         self.device = device
+        self.stacks_number = stacks_number
         print(f'| N-Beats')
-        for stack_id in range(10):  # (len(self.stack_types)):
+        for stack_id in range(stacks_number):  # (len(self.stack_types)):
             self.stacks.append(self.create_stack(stack_id))  # stack_id))
         self.parameters = nn.ParameterList(self.parameters)
         self.sigmoid = torch.nn.Sigmoid()

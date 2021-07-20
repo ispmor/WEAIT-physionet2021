@@ -60,8 +60,9 @@ def test_model(model_directory, data_directory, output_directory):
 
     print('Done.')
     print("Printing stds")
-    for s in std:
+    for s in std_array:
         print(s)
+    print(max(std_array), min(std_array))
 
 if __name__ == '__main__':
     # Parse arguments.
