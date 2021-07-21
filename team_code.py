@@ -33,7 +33,7 @@ six_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF')
 four_leads = ('I', 'II', 'III', 'V2')
 three_leads = ('I', 'II', 'V2')
 two_leads = ('I', 'II')
-leads_set = (twelve_leads, six_leads, four_leads, three_leads, two_leads)
+leads_set = set([twelve_leads])  # , six_leads, four_leads, three_leads, two_leads) #USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
 
 single_peak_length = exp["single_peak_length"]
 forecast_length = exp["forecast_length"]
@@ -42,14 +42,15 @@ backcast_length = exp["backcast_length"]
 hidden = exp["hidden_layer_units"]
 nb_blocks_per_stack = exp["nb_blocks_per_stack"]
 thetas_dim = exp["thetas_dim"]
-
+stacks_number = exp["stacks_number"]
 cuda0 = torch.cuda.set_device(0)
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-#torch.set_default_tensor_type('torch.cuda.FloatTensor')
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
 torch.pin_memory = False
 
 classes_numbers = dict()
 class_files_numbers = dict()
+
 
 ################################################################################
 #
@@ -107,8 +108,6 @@ def training_code(data_directory, model_directory):
     print(classes)
     print(class_files_numbers)
 
-
-
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
 
@@ -119,12 +118,16 @@ def training_code(data_directory, model_directory):
 
     for leads in leads_set:
 
-        name = get_model_filename(leads)
+        leads_idx = np.array(list(range(len(leads))))
 
+        name = get_model_filename(leads)
+        filename = os.path.join(model_directory, name)
         experiment = SummaryWriter()
 
-        checkpoint_name = name[:-3] + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
-        training_checkpoint = name[:-3] + "_training" + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
+        checkpoint_name = name[
+                          :-3] + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
+        training_checkpoint = name[
+                              :-3] + "_training" + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
 
         net = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK, NBeatsNet.GENERIC_BLOCK],
                         forecast_length=forecast_length,
@@ -134,13 +137,14 @@ def training_code(data_directory, model_directory):
                         hidden_layer_units=hidden,
                         share_weights_in_stack=False,
                         device=device,
-                        classes=classes)
+                        classes=classes,
+                        stacks_number=stacks_number)
         net.cuda()
         optimizer = optim.Adam(net.parameters(), lr=0.01, weight_decay=0.0001)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
         init_dataset = list(range(num_recordings))
         lengths = [int(len(init_dataset) * 0.8), len(init_dataset) - int(len(init_dataset) * 0.8)]
-        torch.manual_seed(19)
+        torch.manual_seed(17)
 
         data_training, data_validation = torch_data.random_split(init_dataset, lengths)
         weights = None
@@ -148,73 +152,98 @@ def training_code(data_directory, model_directory):
         if not os.path.isfile(f'cinc_database_{len(leads)}_training.h5'):
             create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, leads, isTraining=True)
             summed_classes = sum(classes_numbers.values())
-            sorted_classes_numbers = dict(sorted(classes_numbers.items(), key=lambda x:int(x[0])))
+            sorted_classes_numbers = dict(sorted(classes_numbers.items(), key=lambda x: int(x[0])))
             weights = torch.tensor([c / summed_classes for c in sorted_classes_numbers.values()], device=device)
-            for w in weights:
-                print(w)
+
+            np.savetxt("weights_training.csv", weights.detach().cpu().numpy(), delimiter=',')
         if not os.path.isfile(f'cinc_database_{len(leads)}_validation.h5'):
-            create_hdf5_db(data_validation, num_classes, header_files, recording_files, classes, leads, isTraining=False)
+            create_hdf5_db(data_validation, num_classes, header_files, recording_files, classes, leads,
+                           isTraining=False)
+        if weights is None and os.path.isfile(f'cinc_database_{len(leads)}_training.h5'):
+            weights = torch.tensor(np.loadtxt('weights_training.csv', delimiter=','), device=device)
 
         training_dataset = HDF5Dataset('./' + f'cinc_database_{len(leads)}_training.h5', recursive=False,
                                        load_data=False,
-                                       data_cache_size=4, transform=None)
+                                       data_cache_size=4, transform=None, leads=leads_idx)
         validation_dataset = HDF5Dataset('./' + f'cinc_database_{len(leads)}_validation.h5', recursive=False,
                                          load_data=False,
-                                         data_cache_size=4, transform=None)
+                                         data_cache_size=4, transform=None, leads=leads_idx)
         print("Przed trainnig data loaderem")
         training_data_loader = torch_data.DataLoader(training_dataset, batch_size=5000, shuffle=True, num_workers=6)
         print("Przed data loader walidacyjnym ")
         validation_data_loader = torch_data.DataLoader(validation_dataset, batch_size=5000, shuffle=True, num_workers=6)
 
         print("data_loader", training_data_loader)
-        num_epochs = 100
-        m = nn.BCEWithLogitsLoss()
-        print("Przed ep[okami")
+
+        n_epochs_stop = 6
+        epochs_no_improve = 0
+        early_stop = False
+        min_val_loss = 999
+
+        print("Przed epokami")
+
+        num_epochs = 20
+        m = nn.BCEWithLogitsLoss(pos_weight=weights)
+        #loss_func = nn.MSELoss(reduction='mean')
         for epoch in range(num_epochs):
             local_step = 0
             epoch_loss = []
+            epoch_loss_mse = []
             for x, y in training_data_loader:
-
                 local_step += 1
                 print("Batch number:", local_step)
                 net.train()
                 _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
-                loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
-                loss = (loss * weights).mean()
+                print(forecast.mean())
+                y_cuda = y.to(device)
+                loss = m(forecast, y_cuda)  # torch.zeros(size=(16,)))
+                #loss_mse = loss_func(forecast, y_cuda)
+                # loss = (loss * weights).mean()
+                # loss_mse = (loss_mse * weights).mean()
 
                 epoch_loss.append(loss)
-
+                #epoch_loss_mse.append(loss_mse)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
             mean = torch.mean(torch.stack(epoch_loss))
+            #mean_mse = torch.mean(torch.stack(epoch_loss_mse))
             print("Epoch: %d Training loss: %f" % (epoch, mean))
-            name_exp = 'train_loss_' + str(len(leads))
-            experiment.add_scalar(name_exp, mean, epoch)
+            name_exp = 'train_loss_' + str(len(leads)) + "stacks:" + str(stacks_number)
 
             with torch.no_grad():
-                print("No grad")
-                # if epoch != 0 and epoch % 100 == 0:
                 epoch_loss = []
                 net.eval()
                 print("Net in eval mode")
                 for x, y in validation_data_loader:
                     print("Step in validation loop")
                     _, forecast = net(x.to(device))  # .to(device))
-                    loss = m(forecast, y.to(device))  # torch.zeros(size=(16,)))
+                    loss = m(forecast, y.to(device))
                     epoch_loss.append(loss)
 
-                mean = torch.mean(torch.stack(epoch_loss))
-                name_exp = 'validation_loss_' + str(len(leads))
-                experiment.add_scalar(name_exp, mean, epoch)
-                print("Epoch: %d Validation loss: %f" % (epoch, mean))
+                mean_val = torch.mean(torch.stack(epoch_loss))
+                print("Epoch: %d Validation loss: %f" % (epoch, mean_val))
 
-                naf.save(training_checkpoint, net, optimizer, epoch)
+                experiment.add_scalars(name_exp, {
+                    'BCEWithLogitsLoss': mean,
+                 #   'MSELoss': mean_mse,
+                    'ValidationBCEWithLogitsLoss': mean_val,
+                }, epoch)
 
-            filename = os.path.join(model_directory, name)
-            print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
-            save(filename, net, optimizer, classes, leads)
+                if mean_val < min_val_loss:
+                    epochs_no_improve = 0
+                    min_val_loss = mean_val
+                    print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
+                    save(filename, net, optimizer, classes, leads)
+                else:
+                    epochs_no_improve += 1
+
+                if epoch > 15 and epochs_no_improve == n_epochs_stop:
+                    print('Early stopping!')
+                    early_stop = True
+                    break
+
             scheduler.step()
 
 
@@ -261,7 +290,7 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             for label in current_labels:
                 if label in classes:
                     j = classes.index(label)
-                    local_label[j]
+                    local_label[j] = True
 
             new_windows = recording_full.shape[0]
             dset.resize(dset.shape[0] + new_windows, axis=0)
@@ -306,7 +335,8 @@ def load_model(model_directory, leads):
                       hidden_layer_units=hidden,
                       share_weights_in_stack=False,
                       device=device,
-                      classes=checkpoint['classes'])
+                      classes=checkpoint['classes'],
+                      stacks_number=stacks_number)
 
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
@@ -325,7 +355,6 @@ def run_model(model, header, recording):
     features = torch.Tensor(naf.one_file_training_data(features, single_peak_length, device))
     # Predict labels and probabilities.
     _, probabilities = model(features)
-
 
     probabilities_mean = torch.mean(probabilities, 0)
 
@@ -442,50 +471,3 @@ def train_full_grad_steps(data, net, optimizer, training_checkpoint, size, globa
     if local_step > 0 and local_step % size == 0:
         return global_step
 
-
-def perform_training(net, optimizer, recordings, forecast_length, backcast_length, batch_size, device, experiment,
-                     training_checkpoint, model_directory, labels, old_eval, i):
-    test_losses = []
-    the_lowest_error = [100]
-
-    data, x_train, y_train, x_test, y_test = naf.get_data_with_labels(recordings, forecast_length, backcast_length,
-                                                                      batch_size, device, labels)
-
-    global_step = train_full_grad_steps(data, device, net, optimizer, test_losses,
-                                        model_directory + training_checkpoint, x_train.shape[0], i)
-
-    train_eval = naf.evaluate_training(backcast_length,
-                                       forecast_length,
-                                       net,
-                                       test_losses,
-                                       x_train,
-                                       y_train,
-                                       the_lowest_error,
-                                       device,
-                                       experiment=experiment)
-
-    experiment.add_scalar(f'train_loss_{training_checkpoint}', train_eval, i)
-
-    new_eval = naf.evaluate_training(backcast_length,
-                                     forecast_length,
-                                     net,
-                                     test_losses,
-                                     x_test,
-                                     y_test,
-                                     the_lowest_error,
-                                     device,
-                                     experiment=experiment)
-    experiment.add_scalar(f'eval_loss_{training_checkpoint}', new_eval, i)
-
-    print("\n New evaluation sccore: %f, ---->>>> old score: %f" % (new_eval, old_eval))
-    # if new_eval < old_eval:
-    #    print("in if")
-    #    difference = old_eval - new_eval
-    #    old_eval = new_eval
-    #    with torch.no_grad():
-    #        if training_checkpoint:
-    #            print("there is a checkpoint!" + training_checkpoint)
-    #            os.remove(training_checkpoint)
-    #        print(model_directory + training_checkpoint)
-    #        naf.save(model_directory + training_checkpoint, net, optimizer, global_step)
-    return new_eval
