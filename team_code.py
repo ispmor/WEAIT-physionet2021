@@ -194,6 +194,7 @@ def training_code(data_directory, model_directory):
                 print("Batch number:", local_step)
                 net.train()
                 _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
+                print(forecast.mean())
                 y_cuda = y.to(device)
                 loss = m(forecast, y_cuda)  # torch.zeros(size=(16,)))
                 #loss_mse = loss_func(forecast, y_cuda)
@@ -222,7 +223,7 @@ def training_code(data_directory, model_directory):
                     epoch_loss.append(loss)
 
                 mean_val = torch.mean(torch.stack(epoch_loss))
-                print("Epoch: %d Validation loss: %f" % (epoch, mean))
+                print("Epoch: %d Validation loss: %f" % (epoch, mean_val))
 
                 experiment.add_scalars(name_exp, {
                     'BCEWithLogitsLoss': mean,
@@ -230,15 +231,15 @@ def training_code(data_directory, model_directory):
                     'ValidationBCEWithLogitsLoss': mean_val,
                 }, epoch)
 
-                if mean < min_val_loss:
+                if mean_val < min_val_loss:
                     epochs_no_improve = 0
-                    min_val_loss = mean
+                    min_val_loss = mean_val
                     print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
                     save(filename, net, optimizer, classes, leads)
                 else:
                     epochs_no_improve += 1
 
-                if epoch > 10 and epochs_no_improve == n_epochs_stop:
+                if epoch > 15 and epochs_no_improve == n_epochs_stop:
                     print('Early stopping!')
                     early_stop = True
                     break
@@ -470,50 +471,3 @@ def train_full_grad_steps(data, net, optimizer, training_checkpoint, size, globa
     if local_step > 0 and local_step % size == 0:
         return global_step
 
-
-def perform_training(net, optimizer, recordings, forecast_length, backcast_length, batch_size, device, experiment,
-                     training_checkpoint, model_directory, labels, old_eval, i):
-    test_losses = []
-    the_lowest_error = [100]
-
-    data, x_train, y_train, x_test, y_test = naf.get_data_with_labels(recordings, forecast_length, backcast_length,
-                                                                      batch_size, device, labels)
-
-    global_step = train_full_grad_steps(data, device, net, optimizer, test_losses,
-                                        model_directory + training_checkpoint, x_train.shape[0], i)
-
-    train_eval = naf.evaluate_training(backcast_length,
-                                       forecast_length,
-                                       net,
-                                       test_losses,
-                                       x_train,
-                                       y_train,
-                                       the_lowest_error,
-                                       device,
-                                       experiment=experiment)
-
-    experiment.add_scalar(f'train_loss_{training_checkpoint}', train_eval, i)
-
-    new_eval = naf.evaluate_training(backcast_length,
-                                     forecast_length,
-                                     net,
-                                     test_losses,
-                                     x_test,
-                                     y_test,
-                                     the_lowest_error,
-                                     device,
-                                     experiment=experiment)
-    experiment.add_scalar(f'eval_loss_{training_checkpoint}', new_eval, i)
-
-    print("\n New evaluation sccore: %f, ---->>>> old score: %f" % (new_eval, old_eval))
-    # if new_eval < old_eval:
-    #    print("in if")
-    #    difference = old_eval - new_eval
-    #    old_eval = new_eval
-    #    with torch.no_grad():
-    #        if training_checkpoint:
-    #            print("there is a checkpoint!" + training_checkpoint)
-    #            os.remove(training_checkpoint)
-    #        print(model_directory + training_checkpoint)
-    #        naf.save(model_directory + training_checkpoint, net, optimizer, global_step)
-    return new_eval
