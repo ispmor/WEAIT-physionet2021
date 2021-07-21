@@ -356,14 +356,14 @@ def run_model(model, header, recording):
     # Predict labels and probabilities.
     _, probabilities = model(features)
 
-    std, probabilities_mean = torch.std_mean(probabilities, 0)
+    probabilities_mean = torch.mean(probabilities, 0)
 
     labels = np.asarray(probabilities_mean.detach().cpu().numpy(), dtype=np.int)
 
     # probabilities = classifier.predict_proba(features)
     # probabilities = np.asarray(probabilities, dtype=np.float32)[:, 0, 1]
 
-    return classes, labels, probabilities_mean.detach().cpu().numpy(), std.detach().cpu().numpy()
+    return classes, labels, probabilities_mean.detach().cpu().numpy()
 
 
 # Define the filename(s) for the trained models. This function is not required. You can change or remove it.

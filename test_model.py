@@ -49,8 +49,7 @@ def test_model(model_directory, data_directory, output_directory):
 
         # Apply model to recording.
         model = leads_to_model[leads]
-        classes, labels, probabilities, std = run_model(model, header, recording) ### Implement this function!
-        std_array.append(std)
+        classes, labels, probabilities = run_model(model, header, recording) ### Implement this function!
         # Save model outputs.
         recording_id = get_recording_id(header)
         head, tail = os.path.split(header_files[i])
@@ -59,10 +58,7 @@ def test_model(model_directory, data_directory, output_directory):
         save_outputs(output_file, recording_id, classes, labels, probabilities)
 
     print('Done.')
-    print("Printing stds")
-    for s in std_array:
-        print(s)
-    print(max(std_array), min(std_array))
+
 
 if __name__ == '__main__':
     # Parse arguments.
