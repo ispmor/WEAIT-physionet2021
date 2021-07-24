@@ -25,11 +25,11 @@ class LSTM_ECG(nn.Module):
         self.window_size = window_size
         self.device = device
         self.leads = leads
-        self.lstm = nn.LSTM(window_size, hidden_dim, bidirectional=True)  
+        self.lstm = nn.LSTM(window_size, hidden_dim, bidirectional=True)
         # The linear layer that maps from hidden state space to tag space
         self.hidden2tag = nn.Linear(hidden_dim * 2 * len(leads), target_size)
         self.hidden = self.init_hidden()
-        self.softmax = nn.Softmax(dim=1)
+        self.sigmoid = nn.Sigmoid()
         self.to(device)
         
        
@@ -45,6 +45,5 @@ class LSTM_ECG(nn.Module):
         self.hidden = self.init_hidden()
         lstm_out, self.hidden = self.lstm(signal, self.hidden)
         tag_space = self.hidden2tag(lstm_out.view(len(signal), -1))
-        tag_scores = self.softmax(tag_space)#F.log_softmax(tag_space, dim=1) #s
-        print(tag_scores[-1])
-        return tag_scores
+      # tag_scores = self.sigmoid(tag_space)#F.log_softmax(tag_space, dim=1) #s
+        return tag_space
