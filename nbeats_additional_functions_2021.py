@@ -136,15 +136,23 @@ def evaluate_training(backcast_length, forecast_length, net, test_losses, x_test
     return singular_loss
     
 
-def one_file_training_data(recording, single_peak_length, cuda):
+def one_file_training_data(recording, single_peak_length, peaks):
     x = []
-    print(type(len(recording[0])), type(single_peak_length))
-    if len(recording[0]) - single_peak_length > single_peak_length:
-        for i in range(0, len(recording[0]) - single_peak_length, single_peak_length // 2):
-            x.append(recording[:, i:i + single_peak_length])
-    else:
-        for i in range(4):
-            x.append(recording[:, 0:single_peak_length])
+
+    for peak in peaks:
+        if peak < 125:
+            x.append(recording[:, 0: single_peak_length])
+        elif peak + 225 < len(recording[0]):
+            x.append(recording[:, peak - 125:peak + 225])
+        else:
+            continue
+
+    #if len(recording[0]) - single_peak_length > single_peak_length:
+    #    for i in range(0, len(recording[0]) - single_peak_length, single_peak_length // 2):
+    #        x.append(recording[:, i:i + single_peak_length])
+    #else:
+    #    for i in range(4):
+    #        x.append(recording[:, 0:single_peak_length])
             #dopełnić 0 z przodu aby była conajmniej 1 pełne okno
 
     x = np.array(x, dtype=np.float)
