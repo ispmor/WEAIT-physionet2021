@@ -9,7 +9,7 @@ from scipy import signal
 from torch import nn
 from torch.nn import functional as F
 #import matplotlib.pyplot as plt
-
+from pywt import wavedec
 
 
 today = date.today().strftime("%d%m%Y")
@@ -138,26 +138,48 @@ def evaluate_training(backcast_length, forecast_length, net, test_losses, x_test
 
 def one_file_training_data(recording, single_peak_length, peaks):
     x = []
+    peaks_len = len(peaks)
+    prev_distance = 0
+    next_distance = 0
+    rr_features = []
+    coeffs = []
+    for i, peak in enumerate(peaks):
+        if i == 0:
+            prev_distance = peak
+        else:
+            prev_distance = peak - peaks[i-1]
 
-    for peak in peaks:
+        if i == peaks_len-1:
+            continue
+        else:
+            next_distance = peaks[i+1] - peak
+
+        if i < 5 and i < peaks_len - 5:
+            avg = (sum(peaks[0:i]) + sum(peaks[i:i+5])) / float(i+5)
+        elif 5 < i < peaks_len - 5:
+            avg = sum(peaks[i-5: i+5]) / 10.0
+        else:
+            avg = (sum(peaks[i-5:i]) + sum(peaks[i:peaks_len-1])) / float(i+5)
+
         if peak < 125:
-            x.append(recording[:, 0: single_peak_length])
+            signal = recording[:, 0: single_peak_length]
+            a4, d4, d3, d2, d1 = wavedec(signal[:, ::2], 'db2', level=4)
+            wavelet_features = np.hstack((a4, d4, d3, d2, d1))
         elif peak + 225 < len(recording[0]):
-            x.append(recording[:, peak - 125:peak + 225])
+            signal = recording[:, peak - 125:peak + 225]
+            a4, d4, d3, d2, d1 = wavedec(signal[:, ::2], 'db2', level=4)
+            wavelet_features = np.hstack((a4, d4, d3, d2, d1))
         else:
             continue
-
-    #if len(recording[0]) - single_peak_length > single_peak_length:
-    #    for i in range(0, len(recording[0]) - single_peak_length, single_peak_length // 2):
-    #        x.append(recording[:, i:i + single_peak_length])
-    #else:
-    #    for i in range(4):
-    #        x.append(recording[:, 0:single_peak_length])
-            #dopełnić 0 z przodu aby była conajmniej 1 pełne okno
+        x.append(signal)
+        rr_features.append([[prev_distance, next_distance, avg] for i in range(len(recording))])
+        coeffs.append(wavelet_features)
 
     x = np.array(x, dtype=np.float)
+    rr_features = np.array(rr_features, dtype=np.float)
+    coeffs = np.asarray(coeffs,  dtype=np.float)
 
-    return x
+    return rr_features, x, coeffs
 
 
 

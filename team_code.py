@@ -6,8 +6,6 @@
 from helper_code import *
 import numpy as np, os, sys, joblib
 
-
-
 ####
 from torch.utils.tensorboard import SummaryWriter
 from nbeats_pytorch.model import LSTM_ECG
@@ -38,28 +36,27 @@ six_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF')
 four_leads = ('I', 'II', 'III', 'V2')
 three_leads = ('I', 'II', 'V2')
 two_leads = ('I', 'II')
-leads_set = set([twelve_leads, six_leads, four_leads, three_leads, two_leads]) #USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
+leads_set = [twelve_leads]  # , six_leads, four_leads, three_leads, two_leads] #USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
 
 single_peak_length = exp["single_peak_length"]
 forecast_length = exp["forecast_length"]
 batch_size = exp["batch_size"]
 backcast_length = exp["backcast_length"]
-hidden = exp["hidden_layer_units"]
+hidden = 17
 nb_blocks_per_stack = exp["nb_blocks_per_stack"]
 thetas_dim = exp["thetas_dim"]
-window_size = exp["window_size"]
+window_size = exp["window_size"]  #rr features
 
-
-#cuda0 = torch.cuda.set_device(0)
-device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-#torch.set_default_tensor_type('torch.cuda.FloatTensor')
-torch.pin_memory=False
-            
+torch.cuda.set_device(1)
+device = torch.device('cuda:1') if torch.cuda.is_available() else torch.device('cpu')
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
+torch.pin_memory = False
 
 classes_numbers = dict()
 class_files_numbers = dict()
 
 sigmoid = nn.Sigmoid()
+
 
 ################################################################################
 #
@@ -100,14 +97,12 @@ def training_code(data_directory, model_directory):
     if all(is_integer(x) for x in classes):
         classes = sorted(classes, key=lambda x: int(x))  # Sort classes numerically if numbers.
     else:
-        classes = sorted(classes) # Sort classes alphanumerically otherwise.
+        classes = sorted(classes)  # Sort classes alphanumerically otherwise.
     num_classes = len(classes)
     print(classes)
     class_index = dict()
     for i, c in enumerate(classes):
         class_index[c] = i
-
-
 
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
@@ -120,32 +115,41 @@ def training_code(data_directory, model_directory):
         filename = os.path.join(model_directory, name)
         experiment = SummaryWriter()
 
-    
-
         torch.manual_seed(17)
         init_dataset = list(range(num_recordings))
         lengths = [int(len(init_dataset) * 0.8), len(init_dataset) - int(len(init_dataset) * 0.8)]
         data_training, data_validation = torch_data.random_split(init_dataset, lengths)
+
+
+        global classes_numbers
+
+        if len(classes_numbers.values()) == 0 and os.path.isfile("classes_in_h5_occurrences.json"):
+            with open("classes_in_h5_occurrences.json", 'r') as f:
+                classes_numbers = json.load(f)
+
+        selected_classes = [k for k, v in classes_numbers.items() if v > 50000]
+        print("SELECTED CLASSES: ", selected_classes)
         weights = None
         ################ CREATE HDF5 DATABASE #############################3
-        if not os.path.isfile('cinc_database_training.h5'): #_{len(leads)}_training.h5'):
-            create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, twelve_leads, isTraining=True)
-            global classes_numbers
+        if not os.path.isfile('cinc_database_training.h5'):  # _{len(leads)}_training.h5'):
+            create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, twelve_leads,
+                           isTraining=1, selected_classes=selected_classes)
+
             summed_classes = sum(classes_numbers.values())
             sorted_classes_numbers = dict(sorted(classes_numbers.items(), key=lambda x: int(x[0])))
             weights = torch.tensor([c / summed_classes for c in sorted_classes_numbers.values()], device=device)
 
             np.savetxt("weights_training.csv", weights.detach().cpu().numpy(), delimiter=',')
-        if not os.path.isfile('cinc_database_validation.h5'): #{len(leads)}_validation.h5'):
+        if not os.path.isfile('cinc_database_validation.h5'):  # {len(leads)}_validation.h5'):
             create_hdf5_db(data_validation, num_classes, header_files, recording_files, classes, twelve_leads,
-                           isTraining=False)
+                           isTraining=0)
         if weights is None and os.path.isfile('cinc_database_training.h5'):
             weights = torch.tensor(np.loadtxt('weights_training.csv', delimiter=','), device=device)
-        if len(classes_numbers.values()) == 0 and os.path.isfile("classes_in_h5_occurrences.json"):
-            with open("classes_in_h5_occurrences.json", 'r') as f:
+        if len(classes_numbers.values()) == 0 and os.path.isfile("classes_in_h5_occurrences_new.json"):
+            with open("classes_in_h5_occurrences_new.json", 'r') as f:
                 classes_numbers = json.load(f)
-        elif len(classes_numbers.values()) != 0 and not os.path.isfile("classes_in_h5_occurrences.json"):
-            with open("classes_in_h5_occurrences.json", 'w') as f:
+        elif len(classes_numbers.values()) != 0 and not os.path.isfile("classes_in_h5_occurrences_new.json"):
+            with open("classes_in_h5_occurrences_new.json", 'w') as f:
                 json.dump(classes_numbers, f)
 
         classes_over_50000 = dict()
@@ -154,17 +158,21 @@ def training_code(data_directory, model_directory):
         for c in classes:
             if classes_numbers[c] > 50000:
                 classes_over_50000[c] = tmp_iterator
-                index_mapping_from_normal_to_over_5000[class_index[c]]=tmp_iterator
-                tmp_iterator +=1
+                index_mapping_from_normal_to_over_5000[class_index[c]] = tmp_iterator
+                tmp_iterator += 1
         summed_classes = sum([classes_numbers[key] for key in classes_over_50000.keys()])
-        sorted_classes_numbers = dict(sorted([(k, classes_numbers[k]) for k in classes_over_50000.keys()], key=lambda x: int(x[0])))
-        weights = torch.tensor([c / summed_classes for c in sorted_classes_numbers.values()], device=device)
+        sorted_classes_numbers = dict(
+            sorted([(k, classes_numbers[k]) for k in classes_over_50000.keys()], key=lambda x: int(x[0])))
+        weights = torch.tensor([c / (summed_classes - c) for c in sorted_classes_numbers.values()], device=device)
 
         print("Creating LSTM")
-        net = LSTM_ECG(device, single_peak_length, len(classes_over_50000.keys()), hidden_dim=1256, classes=classes_over_50000.keys(), leads=leads)
+        net = LSTM_ECG(input_size=len(leads),
+                       num_classes=len(classes_over_50000.keys()),
+                       hidden_size=hidden,
+                       num_layers=4,
+                       seq_length=single_peak_length,
+                       classes=classes_over_50000.keys())
         net.cuda()
-        optimizer = optim.Adam(net.parameters(), lr=0.01, weight_decay=0.0001)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
 
         training_dataset = HDF5Dataset('./' + 'cinc_database_training.h5', recursive=False,
                                        load_data=False,
@@ -172,6 +180,7 @@ def training_code(data_directory, model_directory):
         validation_dataset = HDF5Dataset('./' + 'cinc_database_validation.h5', recursive=False,
                                          load_data=False,
                                          data_cache_size=4, transform=None, leads=leads_idx)
+
         print("Przed trainnig data loaderem")
         training_data_loader = torch_data.DataLoader(training_dataset, batch_size=5000, shuffle=True, num_workers=6)
         print("Przed data loader walidacyjnym ")
@@ -186,21 +195,36 @@ def training_code(data_directory, model_directory):
 
         print("Przed epokami")
 
-        num_epochs = 20
-        m = nn.BCEWithLogitsLoss(pos_weight=weights)
+        num_epochs = 1000
+
+        criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
+        optimizer = optim.Adam(net.parameters(),
+                               lr=0.01)  # ,
+        # weight_decay=0.0001) #optim.SGD(net.parameters(),
+        # momentum=0.9,
+        # lr=0.01)  #
+        # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)#optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.000005, max_lr=0.5, step_size_up=50, cycle_momentum=True)#
+        name_exp = 'train_loss_' + str(len(leads)) + "LSTM" + " scheduler:Step"
         for epoch in range(num_epochs):
             local_step = 0
             epoch_loss = []
 
-            for x, y in training_data_loader:
+            for x, y, rr_features, wavelet_features in training_data_loader:
+                x = torch.transpose(x, 1, 2)
+                rr_features = torch.transpose(rr_features, 1, 2)
+                wavelet_features = torch.transpose(wavelet_features, 1, 2)
+
+                rr_x = torch.hstack((rr_features, x))
+                rr_wavelets = torch.hstack((rr_features, wavelet_features))
+
                 local_step += 1
                 print("Batch number:", local_step)
                 net.train()
-                forecast = net(x.to(device))  # .to(device)) #Dodaje od
+                forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device)) #Dodaje od
                 print(forecast[0])
                 y_selected = np.zeros(shape=(y.shape[0], len(classes_over_50000.keys())))
 
-                for i, vector in enumerate(y):
+                for i, vector in enumerate(y):  # przenieść gdzieś do bazy danych (nie wiem jeszcze jak)
                     indexes = (vector == 1).nonzero().tolist()
                     if len(indexes) > 0:
                         indexes = indexes[0]
@@ -208,9 +232,8 @@ def training_code(data_directory, model_directory):
                         if normal_index in index_mapping_from_normal_to_over_5000:
                             y_selected[i][index_mapping_from_normal_to_over_5000[normal_index]] = 1.0
 
-                y_selected = torch.tensor(y_selected)
-                y_cuda = y_selected.to(device)
-                loss = m(forecast, y_cuda)  # torch.zeros(size=(16,)))
+                y_selected = torch.tensor(y_selected, device=device)
+                loss = criterion(forecast, y_selected)  # torch.zeros(size=(16,)))
                 print(y_selected[0])
                 epoch_loss.append(loss)
                 optimizer.zero_grad()
@@ -219,15 +242,23 @@ def training_code(data_directory, model_directory):
 
             mean = torch.mean(torch.stack(epoch_loss))
             print("Epoch: %d Training loss: %f" % (epoch, mean))
-            name_exp = 'train_loss_' + str(len(leads)) + "LSTM"
 
             with torch.no_grad():
-                epoch_loss = []
+                epoch_loss1 = []
+
                 net.eval()
                 print("Net in eval mode")
-                for x, y in validation_data_loader:
+                for x, y, rr_features, wavelet_features in validation_data_loader:
+                    x = torch.transpose(x, 1, 2)
+                    rr_features = torch.transpose(rr_features, 1, 2)
+                    wavelet_features = torch.transpose(wavelet_features, 1, 2)
+
+                    rr_x = torch.hstack((rr_features, x))
+                    rr_wavelets = torch.hstack((rr_features, wavelet_features))
+
                     print("Step in validation loop")
-                    forecast = net(x.to(device))  # .to(device))\
+                    forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device))\
+
                     y_selected = np.zeros(shape=(y.shape[0], len(classes_over_50000.keys())))
 
                     for i, vector in enumerate(y):
@@ -238,37 +269,41 @@ def training_code(data_directory, model_directory):
                             if normal_index in index_mapping_from_normal_to_over_5000:
                                 y_selected[i][index_mapping_from_normal_to_over_5000[normal_index]] = 1.0
 
-                    y_selected = torch.tensor(y_selected)
-                    y_cuda = y_selected.to(device)
-                    loss = m(forecast, y_cuda)
-                    epoch_loss.append(loss)
+                    y_selected = torch.tensor(y_selected, device=device)
+                    loss = criterion(forecast, y_selected)
+                    epoch_loss1.append(loss)
 
-                mean_val = torch.mean(torch.stack(epoch_loss))
-                print("Epoch: %d Validation loss: %f" % (epoch, mean_val))
+                mean_val1 = torch.mean(torch.stack(epoch_loss1))
+                print("Epoch: %d Validation loss: %f" % (epoch, mean_val1))
+
 
                 experiment.add_scalars(name_exp, {
                     'BCEWithLogitsLoss': mean,
-                 #   'MSELoss': mean_mse,
-                    'ValidationBCEWithLogitsLoss': mean_val,
+                    'ValidationBCEWithLogitsLoss-only_14_classes': mean_val1,
                 }, epoch)
 
-                if mean_val < min_val_loss:
+                if mean_val1 < min_val_loss:
                     epochs_no_improve = 0
-                    min_val_loss = mean_val
+                    min_val_loss = mean_val1
                     print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
                     save(filename, net, optimizer, list(sorted_classes_numbers.keys()), leads)
                 else:
                     epochs_no_improve += 1
 
-                if epoch > 7 and epochs_no_improve == n_epochs_stop:
+                if epoch > 500 and epochs_no_improve == n_epochs_stop:
                     print('Early stopping!')
                     early_stop = True
                     break
-                if torch.isnan(mean_val).any():
+                if torch.isnan(mean_val1).any():
                     print("NaN detected, stopping")
                     break
 
-            scheduler.step()
+            # scheduler.step()
+
+
+def cosine(epoch):
+    t = epoch % 100
+    return 0.0001 + (0.5 - 0.0001) * (1 + np.cos(np.pi * t / 100)) / 2
 
 
 ################################################################################
@@ -277,12 +312,16 @@ def training_code(data_directory, model_directory):
 #
 ################################################################################
 # create HDF5 datase
-def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, classes, leads, isTraining=True):
+
+def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, classes, leads, isTraining=1,
+                   selected_classes=[]):
     group = None
-    if isTraining:
+    if isTraining == 1:
         group = 'training'
-    else:
+    elif isTraining == 0:
         group = 'validation'
+    else:
+        group = 'validation2'
 
     with h5py.File(f'cinc_database_{group}.h5', 'w') as h5file:
 
@@ -293,6 +332,11 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
                                   chunks=(1, len(leads), window_size))
         lset = grp.create_dataset("label", (1, num_classes), maxshape=(None, num_classes), dtype='f',
                                   chunks=(1, num_classes))
+        rrset = grp.create_dataset("rr_features", (1, len(leads), 3), maxshape=(None, len(leads), 3), dtype='f',
+                                  chunks=(1, len(leads), 3))
+        waveset = grp.create_dataset("wavelet_features", (1, len(leads), 185), maxshape=(None, len(leads), 185), dtype='f',
+                                   chunks=(1, len(leads), 185))
+
         counter = 0
         for i in num_recordings:
             print('    {}/{}...'.format(counter + 1, len(num_recordings)))
@@ -300,7 +344,12 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             # Load header and recording.
             header = load_header(header_files[i])
             classes_from_header = get_labels(header)
-
+            class_in_file = False
+            if isTraining < 2:
+                s1 = set(classes_from_header)
+                s2 = set(selected_classes)
+                if not s1.intersection(s2):
+                    continue
             recording = np.array(load_recording(recording_files[i]), dtype=np.float32)
 
             recording_full = get_leads_values(header, recording, leads)
@@ -313,7 +362,8 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
                 continue
             peaks = pan_tompkins_detector(500, recording_full[0])
 
-            recording_full = naf.one_file_training_data(recording_full, window_size, peaks)
+            rr_features, recording_full, wavelet_features = naf.one_file_training_data(recording_full, window_size, peaks)
+
             local_label = np.zeros((num_classes,), dtype=np.bool)
             for label in current_labels:
                 if label in classes:
@@ -328,9 +378,18 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             lset.resize(lset.shape[0] + new_windows, axis=0)
             lset[-new_windows:] = label_pack
 
+            rrset.resize(rrset.shape[0] + new_windows, axis=0)
+            rrset[-new_windows:] = rr_features
+
+            waveset.resize(waveset.shape[0] + new_windows, axis=0)
+            if wavelet_features.shape[0] != new_windows:
+                waveset[-new_windows:] = wavelet_features[:-1]
+            else:
+                waveset[-new_windows:] = wavelet_features
+
             global classes_numbers
             for c in classes_from_header:
-                for i in range(new_windows): #
+                for i in range(new_windows):  #
                     if c in classes_numbers:
                         classes_numbers[c] += 1
                     else:
@@ -356,8 +415,15 @@ def load_model(model_directory, leads):
     filename = os.path.join(model_directory, get_model_filename(leads))
     checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
 
-    model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
-    
+    # model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
+
+    model = LSTM_ECG(input_size=len(leads),
+                     num_classes=len(checkpoint["classes"]),
+                     hidden_size=17,
+                     num_layers=4,
+                     seq_length=single_peak_length,
+                     classes=checkpoint["classes"])
+
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
     model.cuda()
@@ -371,24 +437,32 @@ def run_model(model, header, recording):
     classes = model.classes
     leads = model.leads
 
-    features = get_leads_values(header, recording.astype(np.float), leads)
+    x_features = get_leads_values(header, recording.astype(np.float), leads)
     freq = get_frequency(header)
     if freq != float(500):
-        features = naf.equalize_signal_frequency(freq, features)
+        x_features = naf.equalize_signal_frequency(freq, x_features)
 
-    peaks = pan_tompkins_detector(500, features[0])
+    peaks = pan_tompkins_detector(500, x_features[0])
 
-    features = torch.Tensor(naf.one_file_training_data(features, window_size, peaks))
+    rr_features, x_features, wavelet_features = torch.Tensor(naf.one_file_training_data(x_features, window_size, peaks))
+
     # Predict labels and probabilities.
-    if len(features) == 0:
+    if len(x_features) == 0:
         labels = np.zeros(len(classes))
         probabilities_mean = np.zeros(len(classes))
     else:
-        scores = model(features.to(device))
+        x = torch.transpose(x_features, 1, 2)
+        rr_features = torch.transpose(rr_features, 1, 2)
+        wavelet_features = torch.transpose(wavelet_features, 1, 2)
+
+        rr_x = torch.hstack((rr_features, x))
+        rr_wavelets = torch.hstack((rr_features, wavelet_features))
+
+        scores = model(rr_x.to(device), rr_wavelets.to(device))
         probabilities = sigmoid(scores)
         probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
         labels = probabilities_mean.copy()
-        labels[labels != labels.max()] = 0
+        labels[labels <= 0.01] = 0
         labels[labels != 0] = 1
 
     # probabilities = classifier.predict_proba(features)
@@ -469,6 +543,7 @@ def get_leads_values(header, recording, leads):
         recording[i, :] = (recording[i, :] - baselines[i]) / adc_gains[i]
 
     return recording
+
 
 def pan_tompkins_detector(fs, unfiltered_ecg, MWA_name='cumulative'):
     """
