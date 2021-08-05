@@ -6,8 +6,6 @@
 from helper_code import *
 import numpy as np, os, sys, joblib
 
-
-
 ####
 from torch.utils.tensorboard import SummaryWriter
 from nbeats_pytorch.model import LSTM_ECG
@@ -21,6 +19,8 @@ from torch import optim
 from config import exp_net_params as exp
 import h5py
 from h5class import HDF5Dataset
+import json
+from scipy.signal import butter, filtfilt, lfilter
 
 # import matplotlib.pyplot as plt
 
@@ -36,26 +36,26 @@ six_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF')
 four_leads = ('I', 'II', 'III', 'V2')
 three_leads = ('I', 'II', 'V2')
 two_leads = ('I', 'II')
-leads_set = set([twelve_leads])  # , six_leads, four_leads, three_leads, two_leads) #USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
+leads_set = [twelve_leads, six_leads, four_leads, three_leads, two_leads] #USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
 
 single_peak_length = exp["single_peak_length"]
 forecast_length = exp["forecast_length"]
 batch_size = exp["batch_size"]
 backcast_length = exp["backcast_length"]
-hidden = exp["hidden_layer_units"]
+hidden = 17
 nb_blocks_per_stack = exp["nb_blocks_per_stack"]
 thetas_dim = exp["thetas_dim"]
-window_size = exp["window_size"]
+window_size = exp["window_size"]  #rr features
 
-
-#cuda0 = torch.cuda.set_device(0)
+torch.cuda.set_device(0)
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-#torch.set_default_tensor_type('torch.cuda.FloatTensor')
-torch.pin_memory=False
-            
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
+torch.pin_memory = False
 
 classes_numbers = dict()
 class_files_numbers = dict()
+
+sigmoid = nn.Sigmoid()
 
 
 ################################################################################
@@ -97,17 +97,15 @@ def training_code(data_directory, model_directory):
     if all(is_integer(x) for x in classes):
         classes = sorted(classes, key=lambda x: int(x))  # Sort classes numerically if numbers.
     else:
-        classes = sorted(classes) # Sort classes alphanumerically otherwise.
+        classes = sorted(classes)  # Sort classes alphanumerically otherwise.
     num_classes = len(classes)
     print(classes)
+    class_index = dict()
+    for i, c in enumerate(classes):
+        class_index[c] = i
 
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
-
-    data = np.zeros((num_recordings, 14),
-                    dtype=np.float32)  # 14 features: one feature for each lead, one feature for age, and one feature for sex
-
-    labels = np.zeros((num_recordings, num_classes), dtype=np.bool)  # One-hot encoding of classes
 
     for leads in leads_set:
 
@@ -117,43 +115,73 @@ def training_code(data_directory, model_directory):
         filename = os.path.join(model_directory, name)
         experiment = SummaryWriter()
 
-
-        checkpoint_name = name[:-3] + "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}'
-        training_checkpoint = name[:-3] + "_training"+ "_" + f'bl{nb_blocks_per_stack}-f{forecast_length}-b{backcast_length}-btch{batch_size}-h{hidden}' + ".th"
-    
-
-    
-        print("Creating LSTM")
-        net = LSTM_ECG(device, forecast_length, num_classes, hidden_dim=1024, classes=classes, leads=leads)
-        net.cuda()
-        optimizer = optim.Adam(net.parameters(), lr=0.01, weight_decay=0.0001)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
+        torch.manual_seed(17)
         init_dataset = list(range(num_recordings))
         lengths = [int(len(init_dataset) * 0.8), len(init_dataset) - int(len(init_dataset) * 0.8)]
-        torch.manual_seed(17)
-
         data_training, data_validation = torch_data.random_split(init_dataset, lengths)
+
+
+        global classes_numbers
+
+        if len(classes_numbers.values()) == 0 and os.path.isfile("classes_in_h5_occurrences.json"):
+            with open("classes_in_h5_occurrences.json", 'r') as f:
+                classes_numbers = json.load(f)
+
+        selected_classes = [k for k, v in classes_numbers.items() if v > 50000]
+        print("SELECTED CLASSES: ", selected_classes)
         weights = None
         ################ CREATE HDF5 DATABASE #############################3
-        if not os.path.isfile(f'cinc_database_{len(leads)}_training.h5'):
-            create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, leads, isTraining=True)
+        if not os.path.isfile('cinc_database_training.h5'):  # _{len(leads)}_training.h5'):
+            create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, twelve_leads,
+                           isTraining=1, selected_classes=selected_classes)
+
             summed_classes = sum(classes_numbers.values())
             sorted_classes_numbers = dict(sorted(classes_numbers.items(), key=lambda x: int(x[0])))
             weights = torch.tensor([c / summed_classes for c in sorted_classes_numbers.values()], device=device)
 
             np.savetxt("weights_training.csv", weights.detach().cpu().numpy(), delimiter=',')
-        if not os.path.isfile(f'cinc_database_{len(leads)}_validation.h5'):
-            create_hdf5_db(data_validation, num_classes, header_files, recording_files, classes, leads,
-                           isTraining=False)
-        if weights is None and os.path.isfile(f'cinc_database_{len(leads)}_training.h5'):
+        if not os.path.isfile('cinc_database_validation.h5'):  # {len(leads)}_validation.h5'):
+            create_hdf5_db(data_validation, num_classes, header_files, recording_files, classes, twelve_leads,
+                           isTraining=0, selected_classes=selected_classes)
+        if weights is None and os.path.isfile('cinc_database_training.h5'):
             weights = torch.tensor(np.loadtxt('weights_training.csv', delimiter=','), device=device)
+        if len(classes_numbers.values()) == 0 and os.path.isfile("classes_in_h5_occurrences_new.json"):
+            with open("classes_in_h5_occurrences_new.json", 'r') as f:
+                classes_numbers = json.load(f)
+        elif len(classes_numbers.values()) != 0 and not os.path.isfile("classes_in_h5_occurrences_new.json"):
+            with open("classes_in_h5_occurrences_new.json", 'w') as f:
+                json.dump(classes_numbers, f)
 
-        training_dataset = HDF5Dataset('./' + f'cinc_database_{len(leads)}_training.h5', recursive=False,
+        classes_over_50000 = dict()
+        index_mapping_from_normal_to_over_5000 = dict()
+        tmp_iterator = 0
+        for c in classes:
+            if classes_numbers[c] > 50000:
+                classes_over_50000[c] = tmp_iterator
+                index_mapping_from_normal_to_over_5000[class_index[c]] = tmp_iterator
+                tmp_iterator += 1
+        summed_classes = sum([classes_numbers[key] for key in classes_over_50000.keys()])
+        sorted_classes_numbers = dict(
+            sorted([(k, classes_numbers[k]) for k in classes_over_50000.keys()], key=lambda x: int(x[0])))
+        weights = torch.tensor([c / (summed_classes - c) for c in sorted_classes_numbers.values()], device=device)
+
+
+        print("Creating LSTM")
+        net = LSTM_ECG(input_size=len(leads),
+                       num_classes=len(classes_over_50000.keys()),
+                       hidden_size=hidden,
+                       num_layers=4,
+                       seq_length=single_peak_length,
+                       classes=classes_over_50000.keys())
+        net.cuda()
+
+        training_dataset = HDF5Dataset('./' + 'cinc_database_training.h5', recursive=False,
                                        load_data=False,
                                        data_cache_size=4, transform=None, leads=leads_idx)
-        validation_dataset = HDF5Dataset('./' + f'cinc_database_{len(leads)}_validation.h5', recursive=False,
+        validation_dataset = HDF5Dataset('./' + 'cinc_database_validation.h5', recursive=False,
                                          load_data=False,
                                          data_cache_size=4, transform=None, leads=leads_idx)
+
         print("Przed trainnig data loaderem")
         training_data_loader = torch_data.DataLoader(training_dataset, batch_size=5000, shuffle=True, num_workers=6)
         print("Przed data loader walidacyjnym ")
@@ -168,69 +196,112 @@ def training_code(data_directory, model_directory):
 
         print("Przed epokami")
 
-        num_epochs = 20
-        m = nn.BCEWithLogitsLoss(pos_weight=weights)
-        #loss_func = nn.MSELoss(reduction='mean')
+        num_epochs = 1000
+
+        criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
+        optimizer = optim.Adam(net.parameters(),
+                               lr=0.01)  # ,
+        name_exp = 'train_loss_' + str(len(leads)) + "LSTM" + " scheduler:Step"
         for epoch in range(num_epochs):
             local_step = 0
             epoch_loss = []
-            epoch_loss_mse = []
-            for x, y in training_data_loader:
+
+            for x, y, rr_features, wavelet_features in training_data_loader:
+                x = torch.transpose(x, 1, 2)
+                rr_features = torch.transpose(rr_features, 1, 2)
+                wavelet_features = torch.transpose(wavelet_features, 1, 2)
+
+                rr_x = torch.hstack((rr_features, x))
+                rr_wavelets = torch.hstack((rr_features, wavelet_features))
+
                 local_step += 1
                 print("Batch number:", local_step)
                 net.train()
-                _, forecast = net(x.to(device))  # .to(device)) #Dodaje od
-                print(forecast.mean())
-                y_cuda = y.to(device)
-                loss = m(forecast, y_cuda)  # torch.zeros(size=(16,)))
-                #loss_mse = loss_func(forecast, y_cuda)
-                # loss = (loss * weights).mean()
-                # loss_mse = (loss_mse * weights).mean()
+                forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device)) #Dodaje od
+                print(forecast[0])
+                y_selected = np.zeros(shape=(y.shape[0], len(classes_over_50000.keys())))
 
+                for i, vector in enumerate(y):  # przenieść gdzieś do bazy danych (nie wiem jeszcze jak)
+                    indexes = (vector == 1).nonzero().tolist()
+                    if len(indexes) > 0:
+                        indexes = indexes[0]
+                    for normal_index in indexes:
+                        if normal_index in index_mapping_from_normal_to_over_5000:
+                            y_selected[i][index_mapping_from_normal_to_over_5000[normal_index]] = 1.0
+                            if y_selected[i].sum() == 0:
+                                print("0")
+
+                y_selected = torch.tensor(y_selected, device=device)
+                loss = criterion(forecast, y_selected)  # torch.zeros(size=(16,)))
+                print(y_selected[0])
                 epoch_loss.append(loss)
-                #epoch_loss_mse.append(loss_mse)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
             mean = torch.mean(torch.stack(epoch_loss))
-            #mean_mse = torch.mean(torch.stack(epoch_loss_mse))
             print("Epoch: %d Training loss: %f" % (epoch, mean))
-            name_exp = 'train_loss_' + str(len(leads)) + "LSTM"
 
             with torch.no_grad():
-                epoch_loss = []
+                epoch_loss1 = []
+
                 net.eval()
                 print("Net in eval mode")
-                for x, y in validation_data_loader:
-                    print("Step in validation loop")
-                    _, forecast = net(x.to(device))  # .to(device))
-                    loss = m(forecast, y.to(device))
-                    epoch_loss.append(loss)
+                for x, y, rr_features, wavelet_features in validation_data_loader:
+                    x = torch.transpose(x, 1, 2)
+                    rr_features = torch.transpose(rr_features, 1, 2)
+                    wavelet_features = torch.transpose(wavelet_features, 1, 2)
 
-                mean_val = torch.mean(torch.stack(epoch_loss))
-                print("Epoch: %d Validation loss: %f" % (epoch, mean_val))
+                    rr_x = torch.hstack((rr_features, x))
+                    rr_wavelets = torch.hstack((rr_features, wavelet_features))
+
+                    print("Step in validation loop")
+                    forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device))\
+
+                    y_selected = np.zeros(shape=(y.shape[0], len(classes_over_50000.keys())))
+
+                    for i, vector in enumerate(y):
+                        indexes = (vector == 1).nonzero().tolist()
+                        if len(indexes) > 0:
+                            indexes = indexes[0]
+                        for normal_index in indexes:
+                            if normal_index in index_mapping_from_normal_to_over_5000:
+                                y_selected[i][index_mapping_from_normal_to_over_5000[normal_index]] = 1.0
+
+                    y_selected = torch.tensor(y_selected, device=device)
+                    loss = criterion(forecast, y_selected)
+                    epoch_loss1.append(loss)
+
+                mean_val1 = torch.mean(torch.stack(epoch_loss1))
+                print("Epoch: %d Validation loss: %f" % (epoch, mean_val1))
+
 
                 experiment.add_scalars(name_exp, {
                     'BCEWithLogitsLoss': mean,
-                 #   'MSELoss': mean_mse,
-                    'ValidationBCEWithLogitsLoss': mean_val,
+                    'ValidationBCEWithLogitsLoss-only_14_classes': mean_val1,
                 }, epoch)
 
-                if mean_val < min_val_loss:
+                if mean_val1 < min_val_loss:
                     epochs_no_improve = 0
-                    min_val_loss = mean_val
+                    min_val_loss = mean_val1
                     print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
-                    save(filename, net, optimizer, classes, leads)
+                    save(filename, net, optimizer, list(sorted_classes_numbers.keys()), leads)
                 else:
                     epochs_no_improve += 1
 
-                if epoch > 15 and epochs_no_improve == n_epochs_stop:
+                if epoch > 50 and epochs_no_improve == n_epochs_stop:
                     print('Early stopping!')
                     early_stop = True
                     break
+                if torch.isnan(mean_val1).any():
+                    print("NaN detected, stopping")
+                    break
 
-            scheduler.step()
+
+
+def cosine(epoch):
+    t = epoch % 100
+    return 0.0001 + (0.5 - 0.0001) * (1 + np.cos(np.pi * t / 100)) / 2
 
 
 ################################################################################
@@ -239,14 +310,18 @@ def training_code(data_directory, model_directory):
 #
 ################################################################################
 # create HDF5 datase
-def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, classes, leads, isTraining=True):
-    group = None
-    if isTraining:
-        group = 'training'
-    else:
-        group = 'validation'
 
-    with h5py.File(f'cinc_database_{len(leads)}_{group}.h5', 'w') as h5file:
+def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, classes, leads, isTraining=1,
+                   selected_classes=[]):
+    group = None
+    if isTraining == 1:
+        group = 'training'
+    elif isTraining == 0:
+        group = 'validation'
+    else:
+        group = 'validation2'
+
+    with h5py.File(f'cinc_database_{group}.h5', 'w') as h5file:
 
         grp = h5file.create_group(group)
 
@@ -255,6 +330,11 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
                                   chunks=(1, len(leads), window_size))
         lset = grp.create_dataset("label", (1, num_classes), maxshape=(None, num_classes), dtype='f',
                                   chunks=(1, num_classes))
+        rrset = grp.create_dataset("rr_features", (1, len(leads), 3), maxshape=(None, len(leads), 3), dtype='f',
+                                  chunks=(1, len(leads), 3))
+        waveset = grp.create_dataset("wavelet_features", (1, len(leads), 185), maxshape=(None, len(leads), 185), dtype='f',
+                                   chunks=(1, len(leads), 185))
+
         counter = 0
         for i in num_recordings:
             print('    {}/{}...'.format(counter + 1, len(num_recordings)))
@@ -262,7 +342,13 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             # Load header and recording.
             header = load_header(header_files[i])
             classes_from_header = get_labels(header)
-
+            class_in_file = False
+            if isTraining < 2:
+                s1 = set(classes_from_header)
+                s2 = set(selected_classes)
+                if not s1.intersection(s2):
+                    continue
+                print("S1: ", s1, "\nS2: ", s2, "\nCommon: ", s1.intersection(s2))
             recording = np.array(load_recording(recording_files[i]), dtype=np.float32)
 
             recording_full = get_leads_values(header, recording, leads)
@@ -271,7 +357,12 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             if freq != float(500):
                 recording_full = naf.equalize_signal_frequency(freq, recording_full)
 
-            recording_full = naf.one_file_training_data(recording_full, window_size, device)
+            if recording_full.max() == 0 and recording_full.min() == 0:
+                continue
+            peaks = pan_tompkins_detector(500, recording_full[0])
+
+            rr_features, recording_full, wavelet_features = naf.one_file_training_data(recording_full, window_size, peaks)
+
             local_label = np.zeros((num_classes,), dtype=np.bool)
             for label in current_labels:
                 if label in classes:
@@ -279,6 +370,8 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
                     local_label[j] = True
 
             new_windows = recording_full.shape[0]
+            if new_windows == 0:
+                continue
             dset.resize(dset.shape[0] + new_windows, axis=0)
             dset[-new_windows:] = recording_full
 
@@ -286,8 +379,18 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             lset.resize(lset.shape[0] + new_windows, axis=0)
             lset[-new_windows:] = label_pack
 
+            rrset.resize(rrset.shape[0] + new_windows, axis=0)
+            rrset[-new_windows:] = rr_features
+
+            waveset.resize(waveset.shape[0] + new_windows, axis=0)
+            if wavelet_features.shape[0] != new_windows:
+                waveset[-new_windows:] = wavelet_features[:-1]
+            else:
+                waveset[-new_windows:] = wavelet_features
+
+            global classes_numbers
             for c in classes_from_header:
-                for i in range(new_windows):
+                for i in range(new_windows):  #
                     if c in classes_numbers:
                         classes_numbers[c] += 1
                     else:
@@ -313,8 +416,15 @@ def load_model(model_directory, leads):
     filename = os.path.join(model_directory, get_model_filename(leads))
     checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
 
-    model = LSTM_ECG(device, forecast_length, len(checkpoint["classes"]), hidden_dim=1024, classes=checkpoint["classes"])
-    
+    # model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
+
+    model = LSTM_ECG(input_size=len(leads),
+                     num_classes=len(checkpoint["classes"]),
+                     hidden_size=17,
+                     num_layers=4,
+                     seq_length=single_peak_length,
+                     classes=checkpoint["classes"])
+
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
     model.cuda()
@@ -324,23 +434,44 @@ def load_model(model_directory, leads):
 
 # Generic function for running a trained model.
 def run_model(model, header, recording):
+    global sigmoid
     classes = model.classes
     leads = model.leads
 
-    features = get_leads_values(header, recording.astype(np.float), leads)
+    x_features = get_leads_values(header, recording.astype(np.float), leads)
+    freq = get_frequency(header)
+    if freq != float(500):
+        x_features = naf.equalize_signal_frequency(freq, x_features)
 
-    features = torch.Tensor(naf.one_file_training_data(features, window_size, device))
+    peaks = pan_tompkins_detector(500, x_features[0])
+
+    rr_features, x_features, wavelet_features = naf.one_file_training_data(x_features, window_size, peaks)
+    x_features = torch.Tensor(x_features)
+    rr_features = torch.Tensor(rr_features)
+    wavelet_features = torch.Tensor(wavelet_features)
+
     # Predict labels and probabilities.
-    probabilities = model(features.clone().detach())
- 
-    probabilities_mean = torch.mean(probabilities, 0)
+    if len(x_features) == 0:
+        labels = np.zeros(len(classes))
+        probabilities_mean = np.zeros(len(classes))
+    else:
+        x = torch.transpose(x_features, 1, 2)
+        rr_features = torch.transpose(rr_features, 1, 2)
+        wavelet_features = torch.transpose(wavelet_features, 1, 2)
 
-    labels = np.asarray(probabilities_mean.detach().cpu().numpy(), dtype=np.int)
+        rr_x = torch.hstack((rr_features, x))
+        rr_wavelets = torch.hstack((rr_features, wavelet_features))
 
-    # probabilities = classifier.predict_proba(features)
-    # probabilities = np.asarray(probabilities, dtype=np.float32)[:, 0, 1]
+        scores = model(rr_x.to(device), rr_wavelets.to(device))
+        probabilities = sigmoid(scores)
+        probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
+        labels = probabilities_mean.copy()
+        labels[labels <= 0.1] = 0
+        labels[labels != 0] = 1
+        print(labels)
 
-    return classes, labels, probabilities_mean.detach().cpu().numpy()
+
+    return classes, labels, probabilities_mean
 
 
 # Define the filename(s) for the trained models. This function is not required. You can change or remove it.
@@ -417,4 +548,145 @@ def get_leads_values(header, recording, leads):
     return recording
 
 
+def pan_tompkins_detector(fs, unfiltered_ecg, MWA_name='cumulative'):
+    """
+    Jiapu Pan and Willis J. Tompkins.
+    A Real-Time QRS Detection Algorithm.
+    In: IEEE Transactions on Biomedical Engineering
+    BME-32.3 (1985), pp. 230–236.
+    """
 
+    f1 = 5 / fs
+    f2 = 15 / fs
+
+    b, a = butter(1, [f1 * 2, f2 * 2], btype='bandpass')
+
+    filtered_ecg = lfilter(b, a, unfiltered_ecg)
+
+    diff = np.diff(filtered_ecg)
+
+    squared = diff * diff
+
+    N = int(0.12 * fs)
+    mwa = MWA_from_name(MWA_name)(squared, N)
+    mwa[:int(0.2 * fs)] = 0
+
+    mwa_peaks = panPeakDetect(mwa, fs)
+
+    return mwa_peaks
+
+
+def MWA_from_name(function_name):
+    if function_name == "cumulative":
+        return MWA_cumulative
+    elif function_name == "convolve":
+        return MWA_convolve
+    elif function_name == "original":
+        return MWA_original
+    else:
+        raise RuntimeError('invalid moving average function!')
+
+
+# Fast implementation of moving window average with numpy's cumsum function
+def MWA_cumulative(input_array, window_size):
+    ret = np.cumsum(input_array, dtype=float)
+    ret[window_size:] = ret[window_size:] - ret[:-window_size]
+
+    for i in range(1, window_size):
+        ret[i - 1] = ret[i - 1] / i
+    ret[window_size - 1:] = ret[window_size - 1:] / window_size
+
+    return ret
+
+
+# Original Function
+def MWA_original(input_array, window_size):
+    mwa = np.zeros(len(input_array))
+    mwa[0] = input_array[0]
+
+    for i in range(2, len(input_array) + 1):
+        if i < window_size:
+            section = input_array[0:i]
+        else:
+            section = input_array[i - window_size:i]
+
+        mwa[i - 1] = np.mean(section)
+
+    return mwa
+
+
+# Fast moving window average implemented with 1D convolution
+def MWA_convolve(input_array, window_size):
+    ret = np.pad(input_array, (window_size - 1, 0), 'constant', constant_values=(0, 0))
+    ret = np.convolve(ret, np.ones(window_size), 'valid')
+
+    for i in range(1, window_size):
+        ret[i - 1] = ret[i - 1] / i
+    ret[window_size - 1:] = ret[window_size - 1:] / window_size
+
+    return ret
+
+
+def panPeakDetect(detection, fs):
+    min_distance = int(0.25 * fs)
+
+    signal_peaks = [0]
+    noise_peaks = []
+
+    SPKI = 0.0
+    NPKI = 0.0
+
+    threshold_I1 = 0.0
+    threshold_I2 = 0.0
+
+    RR_missed = 0
+    index = 0
+    indexes = []
+
+    missed_peaks = []
+    peaks = []
+
+    for i in range(len(detection)):
+
+        if i > 0 and i < len(detection) - 1:
+            if detection[i - 1] < detection[i] and detection[i + 1] < detection[i]:
+                peak = i
+                peaks.append(i)
+
+                if detection[peak] > threshold_I1 and (peak - signal_peaks[-1]) > 0.3 * fs:
+
+                    signal_peaks.append(peak)
+                    indexes.append(index)
+                    SPKI = 0.125 * detection[signal_peaks[-1]] + 0.875 * SPKI
+                    if RR_missed != 0:
+                        if signal_peaks[-1] - signal_peaks[-2] > RR_missed:
+                            missed_section_peaks = peaks[indexes[-2] + 1:indexes[-1]]
+                            missed_section_peaks2 = []
+                            for missed_peak in missed_section_peaks:
+                                if missed_peak - signal_peaks[-2] > min_distance and signal_peaks[
+                                    -1] - missed_peak > min_distance and detection[missed_peak] > threshold_I2:
+                                    missed_section_peaks2.append(missed_peak)
+
+                            if len(missed_section_peaks2) > 0:
+                                missed_peak = missed_section_peaks2[np.argmax(detection[missed_section_peaks2])]
+                                missed_peaks.append(missed_peak)
+                                signal_peaks.append(signal_peaks[-1])
+                                signal_peaks[-2] = missed_peak
+
+                else:
+                    noise_peaks.append(peak)
+                    NPKI = 0.125 * detection[noise_peaks[-1]] + 0.875 * NPKI
+
+                threshold_I1 = NPKI + 0.25 * (SPKI - NPKI)
+                threshold_I2 = 0.5 * threshold_I1
+
+                if len(signal_peaks) > 8:
+                    RR = np.diff(signal_peaks[-9:])
+                    RR_ave = int(np.mean(RR))
+                    RR_missed = int(1.66 * RR_ave)
+
+                index = index + 1
+
+    signal_peaks.pop(0)
+
+    return signal_peaks

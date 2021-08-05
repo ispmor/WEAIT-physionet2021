@@ -19,8 +19,8 @@ exp_net_params = dict(
     hidden_layer_units=32,
     nb_blocks_per_stack=3,
     thetas_dim=[16, 16],
-    single_peak_length=500,
-    window_size=500,
+    single_peak_length=350, #500,
+    window_size=350, #500,
     stacks_number=10
 )
 
