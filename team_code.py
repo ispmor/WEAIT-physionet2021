@@ -36,7 +36,7 @@ six_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF')
 four_leads = ('I', 'II', 'III', 'V2')
 three_leads = ('I', 'II', 'V2')
 two_leads = ('I', 'II')
-leads_set = [twelve_leads]  # , six_leads, four_leads, three_leads, two_leads] #USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
+leads_set = [twelve_leads, six_leads, four_leads, three_leads, two_leads] #USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
 
 single_peak_length = exp["single_peak_length"]
 forecast_length = exp["forecast_length"]
@@ -47,8 +47,8 @@ nb_blocks_per_stack = exp["nb_blocks_per_stack"]
 thetas_dim = exp["thetas_dim"]
 window_size = exp["window_size"]  #rr features
 
-torch.cuda.set_device(1)
-device = torch.device('cuda:1') if torch.cuda.is_available() else torch.device('cpu')
+torch.cuda.set_device(0)
+device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
 torch.pin_memory = False
 
@@ -142,7 +142,7 @@ def training_code(data_directory, model_directory):
             np.savetxt("weights_training.csv", weights.detach().cpu().numpy(), delimiter=',')
         if not os.path.isfile('cinc_database_validation.h5'):  # {len(leads)}_validation.h5'):
             create_hdf5_db(data_validation, num_classes, header_files, recording_files, classes, twelve_leads,
-                           isTraining=0)
+                           isTraining=0, selected_classes=selected_classes)
         if weights is None and os.path.isfile('cinc_database_training.h5'):
             weights = torch.tensor(np.loadtxt('weights_training.csv', delimiter=','), device=device)
         if len(classes_numbers.values()) == 0 and os.path.isfile("classes_in_h5_occurrences_new.json"):
@@ -164,6 +164,7 @@ def training_code(data_directory, model_directory):
         sorted_classes_numbers = dict(
             sorted([(k, classes_numbers[k]) for k in classes_over_50000.keys()], key=lambda x: int(x[0])))
         weights = torch.tensor([c / (summed_classes - c) for c in sorted_classes_numbers.values()], device=device)
+
 
         print("Creating LSTM")
         net = LSTM_ECG(input_size=len(leads),
@@ -200,10 +201,6 @@ def training_code(data_directory, model_directory):
         criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
         optimizer = optim.Adam(net.parameters(),
                                lr=0.01)  # ,
-        # weight_decay=0.0001) #optim.SGD(net.parameters(),
-        # momentum=0.9,
-        # lr=0.01)  #
-        # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)#optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.000005, max_lr=0.5, step_size_up=50, cycle_momentum=True)#
         name_exp = 'train_loss_' + str(len(leads)) + "LSTM" + " scheduler:Step"
         for epoch in range(num_epochs):
             local_step = 0
@@ -231,6 +228,8 @@ def training_code(data_directory, model_directory):
                     for normal_index in indexes:
                         if normal_index in index_mapping_from_normal_to_over_5000:
                             y_selected[i][index_mapping_from_normal_to_over_5000[normal_index]] = 1.0
+                            if y_selected[i].sum() == 0:
+                                print("0")
 
                 y_selected = torch.tensor(y_selected, device=device)
                 loss = criterion(forecast, y_selected)  # torch.zeros(size=(16,)))
@@ -290,7 +289,7 @@ def training_code(data_directory, model_directory):
                 else:
                     epochs_no_improve += 1
 
-                if epoch > 500 and epochs_no_improve == n_epochs_stop:
+                if epoch > 50 and epochs_no_improve == n_epochs_stop:
                     print('Early stopping!')
                     early_stop = True
                     break
@@ -298,7 +297,6 @@ def training_code(data_directory, model_directory):
                     print("NaN detected, stopping")
                     break
 
-            # scheduler.step()
 
 
 def cosine(epoch):
@@ -350,6 +348,7 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
                 s2 = set(selected_classes)
                 if not s1.intersection(s2):
                     continue
+                print("S1: ", s1, "\nS2: ", s2, "\nCommon: ", s1.intersection(s2))
             recording = np.array(load_recording(recording_files[i]), dtype=np.float32)
 
             recording_full = get_leads_values(header, recording, leads)
@@ -371,6 +370,8 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
                     local_label[j] = True
 
             new_windows = recording_full.shape[0]
+            if new_windows == 0:
+                continue
             dset.resize(dset.shape[0] + new_windows, axis=0)
             dset[-new_windows:] = recording_full
 
@@ -444,7 +445,10 @@ def run_model(model, header, recording):
 
     peaks = pan_tompkins_detector(500, x_features[0])
 
-    rr_features, x_features, wavelet_features = torch.Tensor(naf.one_file_training_data(x_features, window_size, peaks))
+    rr_features, x_features, wavelet_features = naf.one_file_training_data(x_features, window_size, peaks)
+    x_features = torch.Tensor(x_features)
+    rr_features = torch.Tensor(rr_features)
+    wavelet_features = torch.Tensor(wavelet_features)
 
     # Predict labels and probabilities.
     if len(x_features) == 0:
@@ -462,11 +466,10 @@ def run_model(model, header, recording):
         probabilities = sigmoid(scores)
         probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
         labels = probabilities_mean.copy()
-        labels[labels <= 0.01] = 0
+        labels[labels <= 0.1] = 0
         labels[labels != 0] = 1
+        print(labels)
 
-    # probabilities = classifier.predict_proba(features)
-    # probabilities = np.asarray(probabilities, dtype=np.float32)[:, 0, 1]
 
     return classes, labels, probabilities_mean
 

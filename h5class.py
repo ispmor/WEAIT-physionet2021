@@ -154,7 +154,7 @@ class HDF5Dataset(data.Dataset):
 
         # get new cache_idx assigned by _load_data_info
         cache_idx = self.get_data_infos(type)[0]['cache_idx']
-        if type in "data":
-            return self.data_cache[fp][cache_idx][i][self.leads]
-        else:
+        if type in "label":
             return self.data_cache[fp][cache_idx][i]
+        else:
+            return self.data_cache[fp][cache_idx][i][self.leads]
