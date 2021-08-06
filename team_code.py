@@ -156,10 +156,11 @@ def training_code(data_directory, model_directory):
         index_mapping_from_normal_to_over_5000 = dict()
         tmp_iterator = 0
         for c in classes:
-            if classes_numbers[c] > 50000:
-                classes_over_50000[c] = tmp_iterator
-                index_mapping_from_normal_to_over_5000[class_index[c]] = tmp_iterator
-                tmp_iterator += 1
+            if c in classes_numbers:
+                if classes_numbers[c] > 50000:
+                    classes_over_50000[c] = tmp_iterator
+                    index_mapping_from_normal_to_over_5000[class_index[c]] = tmp_iterator
+                    tmp_iterator += 1
         summed_classes = sum([classes_numbers[key] for key in classes_over_50000.keys()])
         sorted_classes_numbers = dict(
             sorted([(k, classes_numbers[k]) for k in classes_over_50000.keys()], key=lambda x: int(x[0])))
