@@ -8,7 +8,7 @@ import numpy as np, os, sys, joblib
 
 ####
 from torch.utils.tensorboard import SummaryWriter
-from nbeats_pytorch.model import LSTM_ECG
+from nbeats_pytorch.model import LSTM_ECG, BlendMLP
 from torch.nn import functional as F
 from torch import nn
 from torch.utils import data as torch_data
@@ -36,7 +36,7 @@ six_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF')
 four_leads = ('I', 'II', 'III', 'V2')
 three_leads = ('I', 'II', 'V2')
 two_leads = ('I', 'II')
-leads_set = [twelve_leads, six_leads, four_leads, three_leads, two_leads] #USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
+leads_set = [twelve_leads, six_leads, four_leads, three_leads, two_leads]  # USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
 
 single_peak_length = exp["single_peak_length"]
 forecast_length = exp["forecast_length"]
@@ -45,7 +45,7 @@ backcast_length = exp["backcast_length"]
 hidden = 17
 nb_blocks_per_stack = exp["nb_blocks_per_stack"]
 thetas_dim = exp["thetas_dim"]
-window_size = exp["window_size"]  #rr features
+window_size = exp["window_size"]  # rr features
 
 torch.cuda.set_device(0)
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
@@ -120,7 +120,6 @@ def training_code(data_directory, model_directory):
         lengths = [int(len(init_dataset) * 0.8), len(init_dataset) - int(len(init_dataset) * 0.8)]
         data_training, data_validation = torch_data.random_split(init_dataset, lengths)
 
-
         global classes_numbers
 
         if len(classes_numbers.values()) == 0 and os.path.isfile("classes_in_h5_occurrences.json"):
@@ -166,15 +165,27 @@ def training_code(data_directory, model_directory):
             sorted([(k, classes_numbers[k]) for k in classes_over_50000.keys()], key=lambda x: int(x[0])))
         weights = torch.tensor([c / (summed_classes - c) for c in sorted_classes_numbers.values()], device=device)
 
-
         print("Creating LSTM")
         net = LSTM_ECG(input_size=len(leads),
                        num_classes=len(classes_over_50000.keys()),
                        hidden_size=hidden,
                        num_layers=4,
                        seq_length=single_peak_length,
+                       model_type='alpha',
                        classes=classes_over_50000.keys())
         net.cuda()
+
+        net_beta = LSTM_ECG(input_size=len(leads),
+                            num_classes=len(classes_over_50000.keys()),
+                            hidden_size=hidden,
+                            num_layers=4,
+                            seq_length=single_peak_length,
+                            model_type='beta',
+                            classes=classes_over_50000.keys())
+        net_beta.cuda()
+
+        model = BlendMLP(net, net_beta, len(classes_over_50000.keys()))
+        model.cuda()
 
         training_dataset = HDF5Dataset('./' + 'cinc_database_training.h5', recursive=False,
                                        load_data=False,
@@ -197,11 +208,12 @@ def training_code(data_directory, model_directory):
 
         print("Przed epokami")
 
-        num_epochs = 1000
+        num_epochs = 200
 
         criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
-        optimizer = optim.Adam(net.parameters(),
-                               lr=0.01)  # ,
+        # optimizer = optim.Adam(net.parameters(), lr=0.01)
+        # optimizer_beta = optim.Adam(net.parameters(), lr=0.01)
+        optimizer = optim.Adam(model.parameters(), lr=0.01)
         name_exp = 'train_loss_' + str(len(leads)) + "LSTM" + " scheduler:Step"
         for epoch in range(num_epochs):
             local_step = 0
@@ -215,10 +227,19 @@ def training_code(data_directory, model_directory):
                 rr_x = torch.hstack((rr_features, x))
                 rr_wavelets = torch.hstack((rr_features, wavelet_features))
 
+                pre_pca = torch.hstack((rr_features, x[:, ::2, :], wavelet_features))
+                pca_features = torch.pca_lowrank(pre_pca)
+                pca_features = torch.hstack((pca_features[0].reshape(pca_features[0].shape[0], -1), pca_features[1],
+                                             pca_features[2].reshape(pca_features[2].shape[0], -1)))
+                pca_features = pca_features[:, :, None]
+
                 local_step += 1
                 print("Batch number:", local_step)
-                net.train()
-                forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device)) #Dodaje od
+                model.train()
+                # forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device)) #Dodaje od
+                # forecast_beta = net_beta(rr_x.to(device), pca_features.to(device))
+                forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
+
                 print(forecast[0])
                 y_selected = np.zeros(shape=(y.shape[0], len(classes_over_50000.keys())))
 
@@ -246,7 +267,7 @@ def training_code(data_directory, model_directory):
             with torch.no_grad():
                 epoch_loss1 = []
 
-                net.eval()
+                model.eval()
                 print("Net in eval mode")
                 for x, y, rr_features, wavelet_features in validation_data_loader:
                     x = torch.transpose(x, 1, 2)
@@ -256,8 +277,15 @@ def training_code(data_directory, model_directory):
                     rr_x = torch.hstack((rr_features, x))
                     rr_wavelets = torch.hstack((rr_features, wavelet_features))
 
+                    pre_pca = torch.hstack((rr_features, x[:, ::2, :], wavelet_features))
+                    pca_features = torch.pca_lowrank(pre_pca)
+                    pca_features = torch.hstack((pca_features[0].reshape(pca_features[0].shape[0], -1), pca_features[1],
+                                                 pca_features[2].reshape(pca_features[2].shape[0], -1)))
+                    pca_features = pca_features[:, :, None]
+
                     print("Step in validation loop")
-                    forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device))\
+                    # forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device))\
+                    forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
 
                     y_selected = np.zeros(shape=(y.shape[0], len(classes_over_50000.keys())))
 
@@ -276,7 +304,6 @@ def training_code(data_directory, model_directory):
                 mean_val1 = torch.mean(torch.stack(epoch_loss1))
                 print("Epoch: %d Validation loss: %f" % (epoch, mean_val1))
 
-
                 experiment.add_scalars(name_exp, {
                     'BCEWithLogitsLoss': mean,
                     'ValidationBCEWithLogitsLoss-only_14_classes': mean_val1,
@@ -286,7 +313,7 @@ def training_code(data_directory, model_directory):
                     epochs_no_improve = 0
                     min_val_loss = mean_val1
                     print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
-                    save(filename, net, optimizer, list(sorted_classes_numbers.keys()), leads)
+                    save(filename, model, optimizer, list(sorted_classes_numbers.keys()), leads)
                 else:
                     epochs_no_improve += 1
 
@@ -297,12 +324,6 @@ def training_code(data_directory, model_directory):
                 if torch.isnan(mean_val1).any():
                     print("NaN detected, stopping")
                     break
-
-
-
-def cosine(epoch):
-    t = epoch % 100
-    return 0.0001 + (0.5 - 0.0001) * (1 + np.cos(np.pi * t / 100)) / 2
 
 
 ################################################################################
@@ -332,9 +353,10 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
         lset = grp.create_dataset("label", (1, num_classes), maxshape=(None, num_classes), dtype='f',
                                   chunks=(1, num_classes))
         rrset = grp.create_dataset("rr_features", (1, len(leads), 3), maxshape=(None, len(leads), 3), dtype='f',
-                                  chunks=(1, len(leads), 3))
-        waveset = grp.create_dataset("wavelet_features", (1, len(leads), 185), maxshape=(None, len(leads), 185), dtype='f',
-                                   chunks=(1, len(leads), 185))
+                                   chunks=(1, len(leads), 3))
+        waveset = grp.create_dataset("wavelet_features", (1, len(leads), 185), maxshape=(None, len(leads), 185),
+                                     dtype='f',
+                                     chunks=(1, len(leads), 185))
 
         counter = 0
         for i in num_recordings:
@@ -362,7 +384,8 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
                 continue
             peaks = pan_tompkins_detector(500, recording_full[0])
 
-            rr_features, recording_full, wavelet_features = naf.one_file_training_data(recording_full, window_size, peaks)
+            rr_features, recording_full, wavelet_features = naf.one_file_training_data(recording_full, window_size,
+                                                                                       peaks)
 
             local_label = np.zeros((num_classes,), dtype=np.bool)
             for label in current_labels:
@@ -419,12 +442,23 @@ def load_model(model_directory, leads):
 
     # model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
 
-    model = LSTM_ECG(input_size=len(leads),
-                     num_classes=len(checkpoint["classes"]),
-                     hidden_size=17,
-                     num_layers=4,
-                     seq_length=single_peak_length,
-                     classes=checkpoint["classes"])
+    model_a = LSTM_ECG(input_size=len(leads),
+                       num_classes=len(checkpoint["classes"]),
+                       hidden_size=17,
+                       num_layers=4,
+                       seq_length=single_peak_length,
+                       model_type='alpha',
+                       classes=checkpoint["classes"])
+
+    model_b = LSTM_ECG(input_size=len(leads),
+                       num_classes=len(checkpoint["classes"]),
+                       hidden_size=17,
+                       num_layers=4,
+                       seq_length=single_peak_length,
+                       model_type='beta',
+                       classes=checkpoint["classes"])
+
+    model = BlendMLP(model_a, model_b, checkpoint["classes"])
 
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
@@ -463,14 +497,19 @@ def run_model(model, header, recording):
         rr_x = torch.hstack((rr_features, x))
         rr_wavelets = torch.hstack((rr_features, wavelet_features))
 
-        scores = model(rr_x.to(device), rr_wavelets.to(device))
+        pre_pca = torch.hstack((rr_features, x[:, ::2, :], wavelet_features))
+        pca_features = torch.pca_lowrank(pre_pca)
+        pca_features = torch.hstack((pca_features[0].reshape(pca_features[0].shape[0], -1), pca_features[1],
+                                     pca_features[2].reshape(pca_features[2].shape[0], -1)))
+        pca_features = pca_features[:, :, None]
+
+        scores = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
         probabilities = sigmoid(scores)
         probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
         labels = probabilities_mean.copy()
         labels[labels <= 0.1] = 0
         labels[labels != 0] = 1
         print(labels)
-
 
     return classes, labels, probabilities_mean
 
