@@ -42,12 +42,15 @@ class LSTM_ECG(nn.Module):
             self.fc_1 = nn.Linear(hidden_size*541, 128)#hidden_size, 128)  # fully connected 1
             self.fc = nn.Linear(128, num_classes)  # fully connected last layer
         else:
+            self.linea_multiplier = input_size
+            if input_size > 6:
+                self.linea_multiplier = 6
             self.hidden_size=1
             self.num_layers=1
             self.input_size=1
             self.lstm_alpha1 = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size,
                                        num_layers=self.num_layers, batch_first=True, bidirectional=False)
-            self.fc = nn.Linear(input_size * 6 + 363 * 6 + 6, num_classes)
+            self.fc = nn.Linear(input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier, num_classes)
 
         self.relu = nn.ReLU()
 
@@ -81,11 +84,12 @@ class LSTM_ECG(nn.Module):
 
 
 class BlendMLP(nn.Module):
-    def __init__(self, modelA, modelB, num_classes):
+    def __init__(self, modelA, modelB, classes):
         super(BlendMLP, self).__init__()
         self.modelA = modelA
         self.modelB = modelB
-        self.linear = nn.Linear(2*num_classes, num_classes)
+        self.classes = classes
+        self.linear = nn.Linear(2*len(classes), len(classes))
 
     def forward(self, rr_x, rr_wavelets, pca_features):
         x1 = self.modelA(rr_x, rr_wavelets)

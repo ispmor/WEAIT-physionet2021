@@ -36,7 +36,7 @@ six_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF')
 four_leads = ('I', 'II', 'III', 'V2')
 three_leads = ('I', 'II', 'V2')
 two_leads = ('I', 'II')
-leads_set = [twelve_leads, six_leads, four_leads, three_leads, two_leads]  # USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
+leads_set =[twelve_leads, six_leads,four_leads, three_leads, two_leads]  # USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
 
 single_peak_length = exp["single_peak_length"]
 forecast_length = exp["forecast_length"]
@@ -184,7 +184,7 @@ def training_code(data_directory, model_directory):
                             classes=classes_over_50000.keys())
         net_beta.cuda()
 
-        model = BlendMLP(net, net_beta, len(classes_over_50000.keys()))
+        model = BlendMLP(net, net_beta, classes_over_50000.keys())
         model.cuda()
 
         training_dataset = HDF5Dataset('./' + 'cinc_database_training.h5', recursive=False,
@@ -208,7 +208,7 @@ def training_code(data_directory, model_directory):
 
         print("Przed epokami")
 
-        num_epochs = 200
+        num_epochs = 100
 
         criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
         # optimizer = optim.Adam(net.parameters(), lr=0.01)
@@ -308,6 +308,7 @@ def training_code(data_directory, model_directory):
                     'BCEWithLogitsLoss': mean,
                     'ValidationBCEWithLogitsLoss-only_14_classes': mean_val1,
                 }, epoch)
+                print("not improving since:", epochs_no_improve)
 
                 if mean_val1 < min_val_loss:
                     epochs_no_improve = 0
@@ -317,7 +318,7 @@ def training_code(data_directory, model_directory):
                 else:
                     epochs_no_improve += 1
 
-                if epoch > 50 and epochs_no_improve == n_epochs_stop:
+                if epoch > 15 and epochs_no_improve >= n_epochs_stop:
                     print('Early stopping!')
                     early_stop = True
                     break
@@ -442,7 +443,7 @@ def load_model(model_directory, leads):
 
     # model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
 
-    model_a = LSTM_ECG(input_size=len(leads),
+    net = LSTM_ECG(input_size=len(leads),
                        num_classes=len(checkpoint["classes"]),
                        hidden_size=17,
                        num_layers=4,
@@ -450,7 +451,7 @@ def load_model(model_directory, leads):
                        model_type='alpha',
                        classes=checkpoint["classes"])
 
-    model_b = LSTM_ECG(input_size=len(leads),
+    net_beta = LSTM_ECG(input_size=len(leads),
                        num_classes=len(checkpoint["classes"]),
                        hidden_size=17,
                        num_layers=4,
@@ -458,7 +459,7 @@ def load_model(model_directory, leads):
                        model_type='beta',
                        classes=checkpoint["classes"])
 
-    model = BlendMLP(model_a, model_b, checkpoint["classes"])
+    model = BlendMLP(net, net_beta, checkpoint["classes"])
 
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
