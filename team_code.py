@@ -4,12 +4,12 @@
 # Some functions are *required*, but you can edit most parts of required functions, remove non-required functions, and add your own function.
 
 from helper_code import *
-import numpy as np, os, sys, joblib
+import numpy as np
 
 ####
 from torch.utils.tensorboard import SummaryWriter
-from nbeats_pytorch.model import LSTM_ECG, BlendMLP
-from torch.nn import functional as F
+from nbeats_pytorch.model import BlendMLP, Nbeats_alpha, Nbeats_beta
+
 from torch import nn
 from torch.utils import data as torch_data
 import nbeats_additional_functions_2021 as naf
@@ -20,7 +20,7 @@ from config import exp_net_params as exp
 import h5py
 from h5class import HDF5Dataset
 import json
-from scipy.signal import butter, filtfilt, lfilter
+from scipy.signal import butter, lfilter
 
 # import matplotlib.pyplot as plt
 
@@ -165,24 +165,35 @@ def training_code(data_directory, model_directory):
             sorted([(k, classes_numbers[k]) for k in classes_over_50000.keys()], key=lambda x: int(x[0])))
         weights = torch.tensor([c / (summed_classes - c) for c in sorted_classes_numbers.values()], device=device)
 
-        print("Creating LSTM")
-        net = LSTM_ECG(input_size=len(leads),
-                       num_classes=len(classes_over_50000.keys()),
-                       hidden_size=hidden,
-                       num_layers=4,
-                       seq_length=single_peak_length,
-                       model_type='alpha',
-                       classes=classes_over_50000.keys())
+        print("Creating NBEATS")
+        # net = LSTM_ECG(input_size=len(leads),
+        #                num_classes=len(classes_over_50000.keys()),
+        #                hidden_size=hidden,
+        #                num_layers=4,
+        #                seq_length=single_peak_length,
+        #                model_type='alpha',
+        #                classes=classes_over_50000.keys())
+        # net.cuda()
+        net = Nbeats_alpha(input_size=len(leads),
+                           num_classes=len(classes_over_50000.keys()),
+                           hidden_size=17,
+                           seq_length=353,
+                           model_type='alpha',
+                           classes=classes_over_50000.keys(),
+                           num_layers=1)
+
         net.cuda()
 
-        net_beta = LSTM_ECG(input_size=len(leads),
-                            num_classes=len(classes_over_50000.keys()),
-                            hidden_size=hidden,
-                            num_layers=4,
-                            seq_length=single_peak_length,
-                            model_type='beta',
-                            classes=classes_over_50000.keys())
+        net_beta = Nbeats_beta(input_size=len(leads),
+                           num_classes=len(classes_over_50000.keys()),
+                           hidden_size=1,
+                           seq_length=353,
+                           model_type='beta',
+                           classes=classes_over_50000.keys(),
+                           num_layers=1)
         net_beta.cuda()
+
+
 
         model = BlendMLP(net, net_beta, classes_over_50000.keys())
         model.cuda()
@@ -195,9 +206,9 @@ def training_code(data_directory, model_directory):
                                          data_cache_size=4, transform=None, leads=leads_idx)
 
         print("Przed trainnig data loaderem")
-        training_data_loader = torch_data.DataLoader(training_dataset, batch_size=5000, shuffle=True, num_workers=6)
+        training_data_loader = torch_data.DataLoader(training_dataset, batch_size=2500, shuffle=True, num_workers=6)
         print("Przed data loader walidacyjnym ")
-        validation_data_loader = torch_data.DataLoader(validation_dataset, batch_size=5000, shuffle=True, num_workers=6)
+        validation_data_loader = torch_data.DataLoader(validation_dataset, batch_size=2500, shuffle=True, num_workers=6)
 
         print("data_loader", training_data_loader)
 
@@ -208,13 +219,13 @@ def training_code(data_directory, model_directory):
 
         print("Przed epokami")
 
-        num_epochs = 100
+        num_epochs = 75
 
         criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
         # optimizer = optim.Adam(net.parameters(), lr=0.01)
         # optimizer_beta = optim.Adam(net.parameters(), lr=0.01)
         optimizer = optim.Adam(model.parameters(), lr=0.01)
-        name_exp = 'train_loss_' + str(len(leads)) + "LSTM" + " scheduler:Step"
+        name_exp = 'train_loss_' + str(len(leads)) + "NBEATS"
         for epoch in range(num_epochs):
             local_step = 0
             epoch_loss = []
@@ -285,7 +296,7 @@ def training_code(data_directory, model_directory):
 
                     print("Step in validation loop")
                     # forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device))\
-                    forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
+                    forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device)) #, rr_wavelets.to(device), pca_features.to(device))
 
                     y_selected = np.zeros(shape=(y.shape[0], len(classes_over_50000.keys())))
 
@@ -441,25 +452,24 @@ def load_model(model_directory, leads):
     filename = os.path.join(model_directory, get_model_filename(leads))
     checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
 
-    # model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
-
-    net = LSTM_ECG(input_size=len(leads),
-                       num_classes=len(checkpoint["classes"]),
+    net = Nbeats_alpha(input_size=len(leads),
+                       num_classes=len(checkpoint['classes']),
                        hidden_size=17,
-                       num_layers=4,
-                       seq_length=single_peak_length,
+                       seq_length=353,
                        model_type='alpha',
-                       classes=checkpoint["classes"])
+                       classes=checkpoint['classes'],
+                       num_layers=1)
 
-    net_beta = LSTM_ECG(input_size=len(leads),
-                       num_classes=len(checkpoint["classes"]),
-                       hidden_size=17,
-                       num_layers=4,
-                       seq_length=single_peak_length,
-                       model_type='beta',
-                       classes=checkpoint["classes"])
+    net_beta = Nbeats_beta(input_size=len(leads),
+                           num_classes=len(checkpoint['classes']),
+                           hidden_size=1,
+                           seq_length=353,
+                           model_type='beta',
+                           classes=checkpoint['classes'],
+                           num_layers=1)
+    net_beta.cuda()
 
-    model = BlendMLP(net, net_beta, checkpoint["classes"])
+    model = BlendMLP(net, net_beta, checkpoint['classes'])
 
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
@@ -508,7 +518,7 @@ def run_model(model, header, recording):
         probabilities = sigmoid(scores)
         probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
         labels = probabilities_mean.copy()
-        labels[labels <= 0.1] = 0
+        labels[labels < 0.1] = 0
         labels[labels != 0] = 1
         print(labels)
 
