@@ -219,7 +219,8 @@ def training_code(data_directory, model_directory):
 
         print("Przed epokami")
 
-        num_epochs = 75
+        num_epochs = 1
+        weights = weights * 10
 
         criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
         # optimizer = optim.Adam(net.parameters(), lr=0.01)

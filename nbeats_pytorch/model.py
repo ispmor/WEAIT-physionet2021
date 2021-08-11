@@ -169,7 +169,7 @@ class Nbeats_alpha(nn.Module):
         self.relu = nn.ReLU()
 
         self.nbeats_alpha1 = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK],
-                                       nb_blocks_per_stack=3,
+                                       nb_blocks_per_stack=2,
                                        target_size=num_classes,
                                        input_size=input_size,
                                        thetas_dims=(32,32),
