@@ -468,7 +468,6 @@ def load_model(model_directory, leads):
                            model_type='beta',
                            classes=checkpoint['classes'],
                            num_layers=1)
-    net_beta.cuda()
 
     model = BlendMLP(net, net_beta, checkpoint['classes'])
 
@@ -476,6 +475,7 @@ def load_model(model_directory, leads):
     model.leads = checkpoint['leads']
     model.cuda()
     print(f'Restored checkpoint from {filename}.')
+
     return model
 
 
@@ -501,6 +501,7 @@ def run_model(model, header, recording):
     if len(x_features) == 0:
         labels = np.zeros(len(classes))
         probabilities_mean = np.zeros(len(classes))
+        return classes, labels, probabilities_mean
     else:
         x = torch.transpose(x_features, 1, 2)
         rr_features = torch.transpose(rr_features, 1, 2)
@@ -515,15 +516,18 @@ def run_model(model, header, recording):
                                      pca_features[2].reshape(pca_features[2].shape[0], -1)))
         pca_features = pca_features[:, :, None]
 
-        scores = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
-        probabilities = sigmoid(scores)
-        probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
-        labels = probabilities_mean.copy()
-        labels[labels < 0.1] = 0
-        labels[labels != 0] = 1
-        print(labels)
+        with torch.no_grad():
+            scores = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
+            del rr_x, rr_wavelets, rr_features, x, pca_features, pre_pca
+            probabilities = nn.functional.sigmoid(scores)
+            probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
+            labels = probabilities_mean.copy()
+            labels[labels < 0.1] = 0
+            labels[labels != 0] = 1
+            print(labels)
+            print(probabilities_mean)
 
-    return classes, labels, probabilities_mean
+            return classes, labels, probabilities_mean
 
 
 # Define the filename(s) for the trained models. This function is not required. You can change or remove it.
