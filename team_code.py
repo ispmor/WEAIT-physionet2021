@@ -126,11 +126,12 @@ def training_code(data_directory, model_directory):
             with open("classes_in_h5_occurrences.json", 'r') as f:
                 classes_numbers = json.load(f)
 
-        selected_classes = [k for k, v in classes_numbers.items() if v > 50000]
+        selected_classes = ['6374002','10370003','17338001','39732003','47665007','59118001','59931005','63593006','111975006','164889003','164890007','164909002','164917005','164934002','164947007','251146004','270492004','284470004','365413008','426177001','426627000','426783006','427084000','427172004','427393009','445118002','698252002','713426002','713427006','733534002']
         print("SELECTED CLASSES: ", selected_classes)
         weights = None
         ################ CREATE HDF5 DATABASE #############################3
         if not os.path.isfile('cinc_database_training.h5'):  # _{len(leads)}_training.h5'):
+            classes_numbers = dict()
             create_hdf5_db(data_training, num_classes, header_files, recording_files, classes, twelve_leads,
                            isTraining=1, selected_classes=selected_classes)
 
@@ -151,51 +152,42 @@ def training_code(data_directory, model_directory):
             with open("classes_in_h5_occurrences_new.json", 'w') as f:
                 json.dump(classes_numbers, f)
 
-        classes_over_50000 = dict()
-        index_mapping_from_normal_to_over_5000 = dict()
+        classes_to_classify = dict()
+        index_mapping_from_normal_to_selected = dict()
         tmp_iterator = 0
         for c in classes:
-            if c in classes_numbers:
-                if classes_numbers[c] > 50000:
-                    classes_over_50000[c] = tmp_iterator
-                    index_mapping_from_normal_to_over_5000[class_index[c]] = tmp_iterator
-                    tmp_iterator += 1
-        summed_classes = sum([classes_numbers[key] for key in classes_over_50000.keys()])
+            if c in selected_classes:
+                classes_to_classify[c] = tmp_iterator
+                index_mapping_from_normal_to_selected[class_index[c]] = tmp_iterator
+                tmp_iterator += 1
+        summed_classes = sum([classes_numbers[key] for key in classes_to_classify.keys()])
         sorted_classes_numbers = dict(
-            sorted([(k, classes_numbers[k]) for k in classes_over_50000.keys()], key=lambda x: int(x[0])))
+            sorted([(k, classes_numbers[k]) for k in classes_to_classify.keys()], key=lambda x: int(x[0])))
         weights = torch.tensor([c / (summed_classes - c) for c in sorted_classes_numbers.values()], device=device)
 
         print("Creating NBEATS")
-        # net = LSTM_ECG(input_size=len(leads),
-        #                num_classes=len(classes_over_50000.keys()),
-        #                hidden_size=hidden,
-        #                num_layers=4,
-        #                seq_length=single_peak_length,
-        #                model_type='alpha',
-        #                classes=classes_over_50000.keys())
-        # net.cuda()
         net = Nbeats_alpha(input_size=len(leads),
-                           num_classes=len(classes_over_50000.keys()),
+                           num_classes=len(classes_to_classify.keys()),
                            hidden_size=17,
                            seq_length=353,
                            model_type='alpha',
-                           classes=classes_over_50000.keys(),
+                           classes=classes_to_classify.keys(),
                            num_layers=1)
 
         net.cuda()
 
         net_beta = Nbeats_beta(input_size=len(leads),
-                           num_classes=len(classes_over_50000.keys()),
+                           num_classes=len(classes_to_classify.keys()),
                            hidden_size=1,
                            seq_length=353,
                            model_type='beta',
-                           classes=classes_over_50000.keys(),
+                           classes=classes_to_classify.keys(),
                            num_layers=1)
         net_beta.cuda()
 
 
 
-        model = BlendMLP(net, net_beta, classes_over_50000.keys())
+        model = BlendMLP(net, net_beta, classes_to_classify.keys())
         model.cuda()
 
         training_dataset = HDF5Dataset('./' + 'cinc_database_training.h5', recursive=False,
@@ -219,12 +211,10 @@ def training_code(data_directory, model_directory):
 
         print("Przed epokami")
 
-        num_epochs = 75
+        num_epochs = 25
         weights = weights * 10
 
         criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
-        # optimizer = optim.Adam(net.parameters(), lr=0.01)
-        # optimizer_beta = optim.Adam(net.parameters(), lr=0.01)
         optimizer = optim.Adam(model.parameters(), lr=0.01)
         name_exp = 'train_loss_' + str(len(leads)) + "NBEATS"
         for epoch in range(num_epochs):
@@ -253,15 +243,15 @@ def training_code(data_directory, model_directory):
                 forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
 
                 print(forecast[0])
-                y_selected = np.zeros(shape=(y.shape[0], len(classes_over_50000.keys())))
+                y_selected = np.zeros(shape=(y.shape[0], len(classes_to_classify.keys())))
 
                 for i, vector in enumerate(y):  # przenieść gdzieś do bazy danych (nie wiem jeszcze jak)
                     indexes = (vector == 1).nonzero().tolist()
                     if len(indexes) > 0:
                         indexes = indexes[0]
                     for normal_index in indexes:
-                        if normal_index in index_mapping_from_normal_to_over_5000:
-                            y_selected[i][index_mapping_from_normal_to_over_5000[normal_index]] = 1.0
+                        if normal_index in index_mapping_from_normal_to_selected:
+                            y_selected[i][index_mapping_from_normal_to_selected[normal_index]] = 1.0
                             if y_selected[i].sum() == 0:
                                 print("0")
 
@@ -299,15 +289,15 @@ def training_code(data_directory, model_directory):
                     # forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device))\
                     forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device)) #, rr_wavelets.to(device), pca_features.to(device))
 
-                    y_selected = np.zeros(shape=(y.shape[0], len(classes_over_50000.keys())))
+                    y_selected = np.zeros(shape=(y.shape[0], len(classes_to_classify.keys())))
 
                     for i, vector in enumerate(y):
                         indexes = (vector == 1).nonzero().tolist()
                         if len(indexes) > 0:
                             indexes = indexes[0]
                         for normal_index in indexes:
-                            if normal_index in index_mapping_from_normal_to_over_5000:
-                                y_selected[i][index_mapping_from_normal_to_over_5000[normal_index]] = 1.0
+                            if normal_index in index_mapping_from_normal_to_selected:
+                                y_selected[i][index_mapping_from_normal_to_selected[normal_index]] = 1.0
 
                     y_selected = torch.tensor(y_selected, device=device)
                     loss = criterion(forecast, y_selected)
@@ -330,7 +320,7 @@ def training_code(data_directory, model_directory):
                 else:
                     epochs_no_improve += 1
 
-                if epoch > 15 and epochs_no_improve >= n_epochs_stop:
+                if epoch > 5 and epochs_no_improve >= n_epochs_stop:
                     print('Early stopping!')
                     early_stop = True
                     break
