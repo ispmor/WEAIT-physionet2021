@@ -526,7 +526,7 @@ def run_model(model, header, recording):
             probabilities = nn.functional.sigmoid(scores)
             probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
             labels = probabilities_mean.copy()
-            labels[labels < 0.1] = 0
+            labels[labels < 0.75] = 0
             labels[labels != 0] = 1
             print(labels)
             print(probabilities_mean)
