@@ -525,9 +525,15 @@ def run_model(model, header, recording):
             del rr_x, rr_wavelets, rr_features, x, pca_features, pre_pca
             probabilities = nn.functional.sigmoid(scores)
             probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
-            labels = probabilities_mean.copy()
-            labels[labels < 0.75] = 0
-            labels[labels != 0] = 1
+          # labels = np.zeros(len(probabilities_mean), type=np.bool)
+            thresholds_per_class = [0.92912185, 0.99383825, 0.9807903,  0.8201744,  0.84914022, 0.80809229,0.7739887,  0.983991,   0.7987251,  0.9289746,  0.98765594, 0.85153157,0.9495117,  0.76390505, 0.72608936, 0.84350013, 0.91662383, 0.9896282, 0.90384232, 0.8161232, 0.8286067, 0.7592844, 0.67744523, 0.66565263,0.9370738 ,0.7162824 ]
+            labels = probabilities_mean > 0.625
+            #for i, thr in enumerate(thresholds_per_class):
+            #    if probabilities_mean[i] > thr:
+            #        labels[i] = 1
+            #    else:
+            #        labels[i] = 0
+
             print(labels)
             print(probabilities_mean)
 
