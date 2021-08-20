@@ -331,7 +331,9 @@ class BlendMLP(nn.Module):
 
     def forward(self, rr_x, rr_wavelets, pca_features):
         x1 = self.modelA(rr_x, rr_wavelets)
-        x2 = self.modelB(rr_x, pca_features)
+        x2 = self.modelB(rr_x, pca_features) # FOR LSTM
+        #x2 = self.modelB( pca_features) FOR NBEATS
+
         out = torch.cat((x1, x2), dim=1)
         out = self.linear(F.relu(out))
         return out
