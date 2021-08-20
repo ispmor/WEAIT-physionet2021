@@ -10,6 +10,7 @@ import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
 from nbeats_pytorch.model import LSTM_ECG, BlendMLP
+
 from torch import nn
 from torch.utils import data as torch_data
 import nbeats_additional_functions_2021 as naf
@@ -20,7 +21,7 @@ from config import exp_net_params as exp
 import h5py
 from h5class import HDF5Dataset
 import json
-from scipy.signal import butter, filtfilt, lfilter
+from scipy.signal import butter, lfilter
 
 # import matplotlib.pyplot as plt
 
@@ -130,11 +131,14 @@ def training_code(data_directory, model_directory):
                             '713427006', '733534002']
         num_classes = len(selected_classes)
 
+
         print("SELECTED CLASSES: ", selected_classes)
         weights = None
         ################ CREATE HDF5 DATABASE #############################3
         if not os.path.isfile('cinc_database_training.h5'):  # _{len(leads)}_training.h5'):
+
             create_hdf5_db(data_training, num_classes, header_files, recording_files, selected_classes, twelve_leads,
+
                            isTraining=1, selected_classes=selected_classes)
 
             summed_classes = sum(classes_numbers.values())
@@ -192,6 +196,7 @@ def training_code(data_directory, model_directory):
         net_beta.cuda()
 
         model = BlendMLP(net, net_beta, selected_classes)
+
         model.cuda()
 
         training_dataset = HDF5Dataset('./' + 'cinc_database_training.h5', recursive=False,
@@ -216,11 +221,13 @@ def training_code(data_directory, model_directory):
         print("Przed epokami")
 
         num_epochs = 25
+
         #weights = weights * 10
+
 
         criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
         optimizer = optim.Adam(model.parameters(), lr=0.01)
-        name_exp = 'train_loss_' + str(len(leads)) + "LSTM" + " scheduler:Step"
+        name_exp = 'train_loss_' + str(len(leads)) + "NBEATS"
         for epoch in range(num_epochs):
             local_step = 0
             epoch_loss = []
@@ -247,6 +254,7 @@ def training_code(data_directory, model_directory):
                 forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
 
                 print(forecast[0])
+
                 #y_selected = np.zeros(shape=(y.shape[0], len(selected_classes)))
 
                 #for i, vector in enumerate(y):  # przenieść gdzieś do bazy danych (nie wiem jeszcze jak)
@@ -260,6 +268,7 @@ def training_code(data_directory, model_directory):
                 #                print("0")
 
                 y_selected = torch.tensor(y, device=device)
+
                 loss = criterion(forecast, y_selected)  # torch.zeros(size=(16,)))
                 print(y_selected[0])
                 epoch_loss.append(loss)
@@ -303,6 +312,7 @@ def training_code(data_directory, model_directory):
                     #    for normal_index in indexes:
                     #        if normal_index in index_mapping_from_normal_to_selected:
                     #            y_selected[i][index_mapping_from_normal_to_selected[normal_index]] = 1.0
+
 
                     y_selected = torch.tensor(y, device=device) # <- zmienione
                     loss = criterion(forecast, y_selected)
@@ -455,7 +465,6 @@ def load_model(model_directory, leads):
     filename = os.path.join(model_directory, get_model_filename(leads))
     checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
 
-    # model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
 
     net = LSTM_ECG(input_size=len(leads),
                    num_classes=len(checkpoint["classes"]),
@@ -473,7 +482,8 @@ def load_model(model_directory, leads):
                         model_type='beta',
                         classes=checkpoint["classes"])
 
-    model = BlendMLP(net, net_beta, checkpoint["classes"])
+
+    model = BlendMLP(net, net_beta, checkpoint['classes'])
 
     model.load_state_dict(checkpoint['model_state_dict'])
     model.leads = checkpoint['leads']
@@ -533,6 +543,7 @@ def run_model(model, header, recording):
             #        labels[i] = 1
             #    else:
             #        labels[i] = 0
+
 
             print(labels)
             print(probabilities_mean)
