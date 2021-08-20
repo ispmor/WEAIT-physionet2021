@@ -8,8 +8,8 @@ import numpy as np
 
 ####
 from torch.utils.tensorboard import SummaryWriter
+
 from nbeats_pytorch.model import LSTM_ECG, BlendMLP
-from torch.nn import functional as F
 from torch import nn
 from torch.utils import data as torch_data
 import nbeats_additional_functions_2021 as naf
