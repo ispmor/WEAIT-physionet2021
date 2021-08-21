@@ -124,10 +124,10 @@ def training_code(data_directory, model_directory):
 
 
         selected_classes = ['6374002', '10370003', '17338001', '39732003', '47665007', '59118001', '59931005',
-                            '63593006', '111975006', '164889003', '164890007', '164909002', '164917005', '164934002',
+                            '111975006', '164889003', '164890007', '164909002', '164917005', '164934002',
                             '164947007', '251146004', '270492004', '284470004', '365413008', '426177001', '426627000',
-                            '426783006', '427084000', '427172004', '427393009', '445118002', '698252002', '713426002',
-                            '713427006', '733534002']
+                            '426783006', '427084000', '427393009', '445118002', '698252002', '713426002']
+        #, '427172004','63593006',      '713427006'   , '733534002']
         num_classes = len(selected_classes)
 
         print("SELECTED CLASSES: ", selected_classes)
@@ -172,23 +172,24 @@ def training_code(data_directory, model_directory):
 
         weights = calculate_pos_weights(sorted_classes_numbers.values())
 
-        print("Creating LSTM")
-        net = LSTM_ECG(input_size=len(leads),
-                       num_classes=len(selected_classes),
-                       hidden_size=hidden,
-                       num_layers=4,
-                       seq_length=single_peak_length,
-                       model_type='alpha',
-                       classes=selected_classes)
+        print("Creating NBEATS")
+        net = Nbeats_alpha(input_size=len(leads),
+                           num_classes=len(selected_classes),
+                           hidden_size=17,
+                           seq_length=353,
+                           model_type='alpha',
+                           classes=selected_classes,
+                           num_layers=1)
+
         net.cuda()
 
-        net_beta = LSTM_ECG(input_size=len(leads),
-                            num_classes=len(selected_classes),
-                            hidden_size=hidden,
-                            num_layers=4,
-                            seq_length=single_peak_length,
-                            model_type='beta',
-                            classes=selected_classes)
+        net_beta = Nbeats_beta(input_size=len(leads),
+                               num_classes=len(selected_classes),
+                               hidden_size=1,
+                               seq_length=353,
+                               model_type='beta',
+                               classes=selected_classes,
+                               num_layers=1)
         net_beta.cuda()
 
         model = BlendMLP(net, net_beta, selected_classes)
@@ -216,7 +217,7 @@ def training_code(data_directory, model_directory):
         print("Przed epokami")
 
         num_epochs = 25
-        #weights = weights * 10
+
 
         criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
         optimizer = optim.Adam(model.parameters(), lr=0.01)
@@ -242,22 +243,11 @@ def training_code(data_directory, model_directory):
                 local_step += 1
                 print("Batch number:", local_step)
                 model.train()
-                # forecast = net(rr_x.to(device), rr_wavelets.to(device))  # .to(device)) #Dodaje od
-                # forecast_beta = net_beta(rr_x.to(device), pca_features.to(device))
+
                 forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
 
                 print(forecast[0])
-                #y_selected = np.zeros(shape=(y.shape[0], len(selected_classes)))
 
-                #for i, vector in enumerate(y):  # przenieść gdzieś do bazy danych (nie wiem jeszcze jak)
-                #    indexes = (vector == 1).nonzero().tolist()
-                #    if len(indexes) > 0:
-                #        indexes = indexes[0]
-                #    for normal_index in indexes:
-                #        if normal_index in index_mapping_from_normal_to_selected:
-                #            y_selected[i][index_mapping_from_normal_to_selected[normal_index]] = 1.0
-                #            if y_selected[i].sum() == 0:
-                #                print("0")
 
                 y_selected = torch.tensor(y, device=device)
                 loss = criterion(forecast, y_selected)  # torch.zeros(size=(16,)))
@@ -294,15 +284,6 @@ def training_code(data_directory, model_directory):
                     forecast = model(rr_x.to(device), rr_wavelets.to(device),
                                      pca_features.to(device))  # , rr_wavelets.to(device), pca_features.to(device))
 
-                    #y_selected = np.zeros(shape=(y.shape[0], len(selected_classes)))
-
-                    #for i, vector in enumerate(y):
-                    #    indexes = (vector == 1).nonzero().tolist()
-                    #    if len(indexes) > 0:
-                    #        indexes = indexes[0]
-                    #    for normal_index in indexes:
-                    #        if normal_index in index_mapping_from_normal_to_selected:
-                    #            y_selected[i][index_mapping_from_normal_to_selected[normal_index]] = 1.0
 
                     y_selected = torch.tensor(y, device=device) # <- zmienione
                     loss = criterion(forecast, y_selected)
@@ -325,7 +306,7 @@ def training_code(data_directory, model_directory):
                 else:
                     epochs_no_improve += 1
 
-                if epoch > 5 and epochs_no_improve >= n_epochs_stop:
+                if epoch > 10 and epochs_no_improve >= n_epochs_stop:
                     print('Early stopping!')
                     early_stop = True
                     break
@@ -379,6 +360,19 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             # Load header and recording.
             header = load_header(header_files[i])
             classes_from_header = get_labels(header)
+            if '733534002' in classes_from_header:
+                classes_from_header[classes_from_header.index('733534002')] = '164909002'
+                classes_from_header = list(set(classes_from_header))
+            if '713427006' in classes_from_header:
+                classes_from_header[classes_from_header.index('713427006')] = '59118001'
+                classes_from_header = list(set(classes_from_header))
+            if '63593006' in classes_from_header:
+                classes_from_header[classes_from_header.index('63593006')] = '284470004'
+                classes_from_header = list(set(classes_from_header))
+            if '427172004' in classes_from_header:
+                classes_from_header[classes_from_header.index('427172004')] = '17338001'
+                classes_from_header = list(set(classes_from_header))
+
             class_in_file = False
             if isTraining < 2:
                 s1 = set(classes_from_header)
@@ -452,26 +446,28 @@ def save(checkpoint_name, model, optimiser, classes, leads):
 
 # Generic function for loading a model.
 def load_model(model_directory, leads):
+    torch.cuda.set_device(0)
+
     filename = os.path.join(model_directory, get_model_filename(leads))
     checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
 
     # model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
 
-    net = LSTM_ECG(input_size=len(leads),
-                   num_classes=len(checkpoint["classes"]),
-                   hidden_size=17,
-                   num_layers=4,
-                   seq_length=single_peak_length,
-                   model_type='alpha',
-                   classes=checkpoint["classes"])
+    net = Nbeats_alpha(input_size=len(leads),
+                       num_classes=len(checkpoint['classes']),
+                       hidden_size=17,
+                       seq_length=353,
+                       model_type='alpha',
+                       classes=checkpoint['classes'],
+                       num_layers=1)
 
-    net_beta = LSTM_ECG(input_size=len(leads),
-                        num_classes=len(checkpoint["classes"]),
-                        hidden_size=17,
-                        num_layers=4,
-                        seq_length=single_peak_length,
-                        model_type='beta',
-                        classes=checkpoint["classes"])
+    net_beta = Nbeats_beta(input_size=len(leads),
+                           num_classes=len(checkpoint['classes']),
+                           hidden_size=1,
+                           seq_length=353,
+                           model_type='beta',
+                           classes=checkpoint['classes'],
+                           num_layers=1)
 
     model = BlendMLP(net, net_beta, checkpoint["classes"])
 
