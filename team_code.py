@@ -124,10 +124,10 @@ def training_code(data_directory, model_directory):
 
 
         selected_classes = ['6374002', '10370003', '17338001', '39732003', '47665007', '59118001', '59931005',
-                            '63593006', '111975006', '164889003', '164890007', '164909002', '164917005', '164934002',
+                            '111975006', '164889003', '164890007', '164909002', '164917005', '164934002',
                             '164947007', '251146004', '270492004', '284470004', '365413008', '426177001', '426627000',
-                            '426783006', '427084000', '427172004', '427393009', '445118002', '698252002', '713426002',
-                            '713427006', '733534002']
+                            '426783006', '427084000', '427393009', '445118002', '698252002', '713426002']
+        #, '427172004','63593006',      '713427006'   , '733534002']
         num_classes = len(selected_classes)
 
         print("SELECTED CLASSES: ", selected_classes)
@@ -360,6 +360,19 @@ def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, c
             # Load header and recording.
             header = load_header(header_files[i])
             classes_from_header = get_labels(header)
+            if '733534002' in classes_from_header:
+                classes_from_header[classes_from_header.index('733534002')] = '164909002'
+                classes_from_header = list(set(classes_from_header))
+            if '713427006' in classes_from_header:
+                classes_from_header[classes_from_header.index('713427006')] = '59118001'
+                classes_from_header = list(set(classes_from_header))
+            if '63593006' in classes_from_header:
+                classes_from_header[classes_from_header.index('63593006')] = '284470004'
+                classes_from_header = list(set(classes_from_header))
+            if '427172004' in classes_from_header:
+                classes_from_header[classes_from_header.index('427172004')] = '17338001'
+                classes_from_header = list(set(classes_from_header))
+
             class_in_file = False
             if isTraining < 2:
                 s1 = set(classes_from_header)
@@ -433,6 +446,8 @@ def save(checkpoint_name, model, optimiser, classes, leads):
 
 # Generic function for loading a model.
 def load_model(model_directory, leads):
+    torch.cuda.set_device(0)
+
     filename = os.path.join(model_directory, get_model_filename(leads))
     checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
 
