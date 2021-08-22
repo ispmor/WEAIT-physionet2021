@@ -40,7 +40,8 @@ def test_model(model_directory, data_directory, output_directory):
     labels = load_labels(header_files, classes)
 
     binary_outputs = []
-    scalar_outputs = np.ndarray((num_recordings, 30))
+    scalar_outputs = np.ndarray((num_recordings, 26))
+    c = np.ndarray((num_recordings, 26))
 
     # Create a folder for the outputs if it does not already exist.
     if not os.path.isdir(output_directory):
@@ -65,6 +66,7 @@ def test_model(model_directory, data_directory, output_directory):
     print('Running model...')
     returned_classes = None
 
+
     for i in range(num_recordings):
         print('    {}/{}...'.format(i + 1, num_recordings))
 
@@ -75,15 +77,14 @@ def test_model(model_directory, data_directory, output_directory):
 
         # Apply model to recording.
         model = leads_to_model[leads]
-        returned_classes, binary_outputs, scalar_outputs[i] = run_model(model, header, recording)  ### Implement this function!
+        c[i], binary_outputs, scalar_outputs[i] = run_model(model, header, recording)  ### Implement this function!
         # Save model outputs.
 
-    returned_classes = [{c} for c in returned_classes]
     thresholds = np.linspace(0.6, 0.85, 25)
     for thr in thresholds:
-        print("THR: ", thr)
+        print("\n\nTHR: ", thr)
         binary_outputs = [scalar_outputs[i] > thr for i in range(len(scalar_outputs))]
-        binary_outputs_local, scalar_outputs_local = load_classifier_outputs(binary_outputs, scalar_outputs, classes, returned_classes)
+        binary_outputs_local, scalar_outputs_local = load_classifier_outputs(binary_outputs, scalar_outputs, c)
         auroc, auprc, auroc_classes, auprc_classes = compute_auc(labels, scalar_outputs_local)
         accuracy = compute_accuracy(labels, binary_outputs_local)
         print('--- Accuracy: ', accuracy)
@@ -186,7 +187,7 @@ def load_labels(label_files, classes):
 
 
 # Load outputs from output files.
-def load_classifier_outputs(recording_binary_outputs, recording_scalar_outputs, classes, recording_classes):
+def load_classifier_outputs(recording_binary, recording_scalars, recording_c):
     # The outputs should have the following form:
     #
     # #Record ID
@@ -194,8 +195,10 @@ def load_classifier_outputs(recording_binary_outputs, recording_scalar_outputs, 
     #           0,           1,           1
     #        0.12,        0.34,        0.56
     #
-    num_recordings = len(recording_binary_outputs)
-    num_classes = len(classes)
+    global classes_glob
+    num_recordings = len(recording_scalars)
+    num_classes = len(classes_glob)
+
 
     # Use one-hot encoding for the outputs.
     binary_outputs = np.zeros((num_recordings, num_classes), dtype=np.bool)
@@ -203,23 +206,27 @@ def load_classifier_outputs(recording_binary_outputs, recording_scalar_outputs, 
 
     # Iterate over the recordings.
     for i in range(num_recordings):
+        recording_id, recording_classes, recording_binary_outputs, recording_scalar_outputs = i, recording_c[i], recording_binary[i], recording_scalars[i]
 
+        # Allow for equivalent classes and sanitize classifier outputs.
+        recording_binary_outputs = [1 if ((is_finite_number(entry) and float(entry)==1) or (entry in ('True', 'true', 'T', 't'))) else 0 for entry in recording_binary_outputs]
+        recording_scalar_outputs = [float(entry) if is_finite_number(entry) else 0 for entry in recording_scalar_outputs]
+        recording_classes = [{str(int(r))} for r in recording_classes]
         # Allow for unordered/reordered and equivalent classes.
-        for j, x in enumerate(classes):
+        for j, x in enumerate(classes_glob): #<- global classes
             binary_values = list()
             scalar_values = list()
-            for k, y in enumerate(recording_classes):
+            for k, y in enumerate(recording_classes):# <- recording classes
                 if x & y:
                     binary_values.append(recording_binary_outputs[k])
                     scalar_values.append(recording_scalar_outputs[k])
             if binary_values:
-                binary_outputs[i, j] = any(
-                    binary_values[0])  # Define a class as positive if any of the equivalent classes is positive.
+                binary_outputs[i, j] = any(binary_values) # Define a class as positive if any of the equivalent classes is positive.
             if scalar_values:
-                scalar_outputs[i, j] = np.mean(
-                    scalar_values)  # Define the scalar value of a class as the mean value of the scalar values across equivalent classes.
+                scalar_outputs[i, j] = np.mean(scalar_values) # Define the scalar value of a class as the mean value of the scalar values across equivalent classes.
 
     return binary_outputs, scalar_outputs
+
 
 
 # Compute recording-wise accuracy.
@@ -311,7 +318,6 @@ def compute_f_measure(labels, outputs):
 
 # Compute macro AUROC and macro AUPRC.
 def compute_auc(labels, outputs):
-    print("LABELS", labels[0])
     num_recordings, num_classes = np.shape(labels)
 
     # Compute and summarize the confusion matrices for each class across at distinct output values.
@@ -446,13 +452,7 @@ def compute_auc(labels, outputs):
     plt.savefig(title)
     plt.close()
 
-    for k in range(num_classes):
-        precision, recall, thresholds = precision_recall_curve(labels[:, k], outputs[:, k])
-        fscore = (2 * precision * recall) / (precision + recall)
-        # locate the index of the largest f score
-        ix = np.argmax(fscore)
-        optim[k] = thresholds[ix]
-        #print('Best Threshold=%f, F-Score=%.3f' % (thresholds[ix], fscore[ix]))
+
 
     #print(optim)
     return macro_auroc, macro_auprc, auroc, auprc
