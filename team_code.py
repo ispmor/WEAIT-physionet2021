@@ -36,7 +36,7 @@ six_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF')
 four_leads = ('I', 'II', 'III', 'V2')
 three_leads = ('I', 'II', 'V2')
 two_leads = ('I', 'II')
-leads_set = [twelve_leads, six_leads, four_leads, three_leads, two_leads]  # USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
+leads_set = [twelve_leads]#, six_leads, four_leads, three_leads, two_leads]  # USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
 
 single_peak_length = exp["single_peak_length"]
 forecast_length = exp["forecast_length"]
@@ -172,24 +172,24 @@ def training_code(data_directory, model_directory):
 
         weights = calculate_pos_weights(sorted_classes_numbers.values())
 
-        print("Creating NBEATS")
-        net = Nbeats_alpha(input_size=len(leads),
-                           num_classes=len(selected_classes),
-                           hidden_size=17,
-                           seq_length=353,
-                           model_type='alpha',
-                           classes=selected_classes,
-                           num_layers=1)
+        print("LSTM")
+        net = LSTM_ECG(input_size=len(leads),
+                       num_classes=len(selected_classes),
+                       hidden_size=hidden,
+                       num_layers=4,
+                       seq_length=single_peak_length,
+                       model_type='alpha',
+                       classes=selected_classes)
 
         net.cuda()
 
-        net_beta = Nbeats_beta(input_size=len(leads),
-                               num_classes=len(selected_classes),
-                               hidden_size=1,
-                               seq_length=353,
-                               model_type='beta',
-                               classes=selected_classes,
-                               num_layers=1)
+        net_beta = LSTM_ECG(input_size=len(leads),
+                            num_classes=len(selected_classes),
+                            hidden_size=hidden,
+                            num_layers=4,
+                            seq_length=single_peak_length,
+                            model_type='beta',
+                            classes=selected_classes)
         net_beta.cuda()
 
         model = BlendMLP(net, net_beta, selected_classes)
@@ -453,21 +453,21 @@ def load_model(model_directory, leads):
 
     # model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
 
-    net = Nbeats_alpha(input_size=len(leads),
-                       num_classes=len(checkpoint['classes']),
-                       hidden_size=17,
-                       seq_length=353,
-                       model_type='alpha',
-                       classes=checkpoint['classes'],
-                       num_layers=1)
+    net = LSTM_ECG(input_size=len(leads),
+                   num_classes=len(checkpoint["classes"]),
+                   hidden_size=17,
+                   num_layers=4,
+                   seq_length=single_peak_length,
+                   model_type='alpha',
+                   classes=checkpoint["classes"])
 
-    net_beta = Nbeats_beta(input_size=len(leads),
-                           num_classes=len(checkpoint['classes']),
-                           hidden_size=1,
-                           seq_length=353,
-                           model_type='beta',
-                           classes=checkpoint['classes'],
-                           num_layers=1)
+    net_beta = LSTM_ECG(input_size=len(leads),
+                        num_classes=len(checkpoint["classes"]),
+                        hidden_size=17,
+                        num_layers=4,
+                        seq_length=single_peak_length,
+                        model_type='beta',
+                        classes=checkpoint["classes"])
 
     model = BlendMLP(net, net_beta, checkpoint["classes"])
 
