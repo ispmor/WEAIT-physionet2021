@@ -49,8 +49,8 @@ nb_blocks_per_stack = exp["nb_blocks_per_stack"]
 thetas_dim = exp["thetas_dim"]
 window_size = exp["window_size"]  # rr features
 
-torch.cuda.set_device(1)
-device = torch.device('cuda:1') if torch.cuda.is_available() else torch.device('cpu')
+torch.cuda.set_device(0)
+device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
 torch.pin_memory = False
 
@@ -199,8 +199,10 @@ def training_code(data_directory, model_directory):
             weights = calculate_pos_weights(sorted_classes_numbers.values())
             print(weights)
             
-            print("Creating NBEATS -------------> HIDDEN LAYERS = 3 insted of 17")
-            
+            print("Creating NBEATS -------------> HIDDEN SIZE = 3 insted of 17")
+            print("Creating NBEATS -------------> NUM_LAYERS = 1 INSTEAD OF 1")
+            print("Creating NBEATS BETA --------> HIDDEN_SIZE = 3 instead of 17")
+            print("Creating NBEATS BETA --------> NUM_LAUERS = 3 INSTEAD OF 1")
             torch.manual_seed(17)
             net = Nbeats_alpha(input_size=len(leads),
                            num_classes=len(selected_classes),
@@ -215,11 +217,11 @@ def training_code(data_directory, model_directory):
             torch.manual_seed(17)
             net_beta = Nbeats_beta(input_size=len(leads),
                                num_classes=len(selected_classes),
-                               hidden_size=1,
+                               hidden_size=3,
                                seq_length=353,
                                model_type='beta',
                                classes=selected_classes,
-                               num_layers=1)
+                               num_layers=3)
             net_beta.cuda()
             #torch.manual_seed(17)
             #print("LSTM")
@@ -391,11 +393,11 @@ def training_code(data_directory, model_directory):
             torch.manual_seed(17)
             net_beta = Nbeats_beta(input_size=len(leads),
                                num_classes=len(selected_classes),
-                               hidden_size=1,
+                               hidden_size=3,
                                seq_length=353,
                                model_type='beta',
                                classes=selected_classes,
-                               num_layers=1)
+                               num_layers=3)
             net_beta.cuda()
 
 
