@@ -294,10 +294,10 @@ class LSTM_ECG(nn.Module):
 
     def forward(self, rr_x, rr_wavelets):
         if self.model_type == 'alpha':
-            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
-            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # internal state
-            h_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
-            c_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # internal state
+            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # hidden state
+            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # internal state
+            h_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # hidden state
+            c_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # internal state
 
             output_alpha1, (hn_alpha1, cn) = self.lstm_alpha1(rr_x, (h_0, c_0))  # lstm with input, hidden, and internal state
             output_alpha2, (hn_alpha2, cn) = self.lstm_alpha2(rr_wavelets, (h_1, c_1))  # lstm with input, hidden, and internal state
@@ -309,8 +309,8 @@ class LSTM_ECG(nn.Module):
             out = self.fc(out)  # Final Output
             return out
         else:
-            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
-            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # internal state
+            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # hidden state
+            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # internal state
 
             output_beta, (hn_beta, cn) = self.lstm_alpha1(rr_wavelets, (h_0, c_0))
 
@@ -334,6 +334,9 @@ class BlendMLP(nn.Module):
         x2 = self.modelB(rr_x, pca_features) # FOR LSTM
         #x2 = self.modelB(pca_features) #FOR NBEATS
 
-        out = torch.cat((x1, x2), dim=1)
-        out = self.linear(F.relu(out))
-        return out
+        if x1.shape == x2.shape:
+            out = torch.cat((x1, x2), dim=1)
+            out = self.linear(F.relu(out))
+            return out
+        else:
+            return x1
