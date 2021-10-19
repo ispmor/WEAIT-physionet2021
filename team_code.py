@@ -10,7 +10,7 @@ import time
 ####
 from torch.utils.tensorboard import SummaryWriter
 
-from nbeats_pytorch.model import LSTM_ECG, BlendMLP, Nbeats_alpha, Nbeats_beta
+from nbeats_pytorch.model import *
 from torch import nn
 from torch.utils import data as torch_data
 import nbeats_additional_functions_2021 as naf
@@ -199,30 +199,58 @@ def training_code(data_directory, model_directory):
             weights = calculate_pos_weights(sorted_classes_numbers.values())
             print(weights)
             
-            print("Creating NBEATS -------------> HIDDEN SIZE = 3 insted of 17")
-            print("Creating NBEATS -------------> NUM_LAYERS = 1 INSTEAD OF 1")
-            print("Creating NBEATS BETA --------> HIDDEN_SIZE = 3 instead of 17")
-            print("Creating NBEATS BETA --------> NUM_LAUERS = 3 INSTEAD OF 1")
+            print("Creating GRU  -------------> HIDDEN SIZE = 17 insted of 17")
+            print("Creating GRU  -------------> NUM_LAYERS = 4 INSTEAD OF 1")
+            print("Creating GRU  BETA --------> HIDDEN_SIZE = 17 instead of 17")
+            print("Creating GRU  BETA --------> NUM_LAUERS = 1 INSTEAD OF 1")
+            
+            
             torch.manual_seed(17)
-            net = Nbeats_alpha(input_size=len(leads),
-                           num_classes=len(selected_classes),
-                           hidden_size=3,
-                           seq_length=353,
-                           model_type='alpha',
-                           classes=selected_classes,
-                           num_layers=1)
+            print("GRU")
+            net = GRU_ECG_ALPHA(input_size=len(leads),
+                       num_classes=len(selected_classes),
+                       hidden_size=17,
+                       num_layers=4,
+                       seq_length=single_peak_length,
+                       model_type='alpha',
+                       classes=selected_classes)
 
             net.cuda()
-
             torch.manual_seed(17)
-            net_beta = Nbeats_beta(input_size=len(leads),
-                               num_classes=len(selected_classes),
-                               hidden_size=3,
-                               seq_length=353,
-                               model_type='beta',
-                               classes=selected_classes,
-                               num_layers=3)
+            net_beta = GRU_ECG_BETA(input_size=len(leads),
+                            num_classes=len(selected_classes),
+                            hidden_size=17,
+                            num_layers=1,
+                            seq_length=single_peak_length,
+                            model_type='beta',
+                            classes=selected_classes)
             net_beta.cuda()
+           
+
+            
+            
+            
+            
+            #torch.manual_seed(17)
+            #net = Nbeats_alpha(input_size=len(leads),
+            #               num_classes=len(selected_classes),
+            #               hidden_size=3,
+            #               seq_length=353,
+            #               model_type='alpha',
+            #               classes=selected_classes,
+            #               num_layers=1)
+
+            #net.cuda()
+
+            #torch.manual_seed(17)
+            #net_beta = Nbeats_beta(input_size=len(leads),
+            #                   num_classes=len(selected_classes),
+            #                   hidden_size=3,
+            #                   seq_length=353,
+            #                   model_type='beta',
+            #                   classes=selected_classes,
+            #                   num_layers=3)
+            #net_beta.cuda()
             #torch.manual_seed(17)
             #print("LSTM")
             #net = LSTM_ECG(input_size=len(leads),
@@ -356,7 +384,29 @@ def training_code(data_directory, model_directory):
             del net, net_beta, model, optimizer
 
             min_mean = 100
-            #torch.manual_seed(17)
+            torch.manual_seed(17)
+            print("GRU")
+            net = GRU_ECG_ALPHA(input_size=len(leads),
+                       num_classes=len(selected_classes),
+                       hidden_size=17,
+                       num_layers=4,
+                       seq_length=single_peak_length,
+                       model_type='alpha',
+                       classes=selected_classes)
+
+            net.cuda()
+            torch.manual_seed(17)
+            net_beta = GRU_ECG_BETA(input_size=len(leads),
+                            num_classes=len(selected_classes),
+                            hidden_size=17,
+                            num_layers=1,
+                            seq_length=single_peak_length,
+                            model_type='beta',
+                            classes=selected_classes)
+            net_beta.cuda()
+           
+           
+           #torch.manual_seed(17)
             #print("LSTM")
             #net = LSTM_ECG(input_size=len(leads),
             #           num_classes=len(selected_classes),
@@ -377,28 +427,28 @@ def training_code(data_directory, model_directory):
             #                classes=selected_classes)
             #net_beta.cuda()
             
-            print("Creating NBEATS")
+            #print("Creating NBEATS")
 
-            torch.manual_seed(17)
-            net = Nbeats_alpha(input_size=len(leads),
-                           num_classes=len(selected_classes),
-                           hidden_size=3,
-                           seq_length=353,
-                           model_type='alpha',
-                           classes=selected_classes,
-                           num_layers=1)
+            #torch.manual_seed(17)
+            #net = Nbeats_alpha(input_size=len(leads),
+            #               num_classes=len(selected_classes),
+            #               hidden_size=3,
+            #               seq_length=353,
+            #               model_type='alpha',
+            #               classes=selected_classes,
+            #               num_layers=1)
 
-            net.cuda()
+            #net.cuda()
 
-            torch.manual_seed(17)
-            net_beta = Nbeats_beta(input_size=len(leads),
-                               num_classes=len(selected_classes),
-                               hidden_size=3,
-                               seq_length=353,
-                               model_type='beta',
-                               classes=selected_classes,
-                               num_layers=3)
-            net_beta.cuda()
+            #torch.manual_seed(17)
+            #net_beta = Nbeats_beta(input_size=len(leads),
+            #                   num_classes=len(selected_classes),
+            #                   hidden_size=3,
+            #                   seq_length=353,
+            #                   model_type='beta',
+            #                   classes=selected_classes,
+            #                   num_layers=3)
+            #net_beta.cuda()
 
 
 
@@ -469,6 +519,8 @@ def training_code(data_directory, model_directory):
             print(f"#####   Fold={fold}, Leads: {len(leads)}")
             print("########################################################")
             binary_outputs_local, scalar_outputs_local = load_classifier_outputs(binary_outputs, scalar_outputs, c, classes_eval)
+            auroc, auprc, auroc_classes, auprc_classes = compute_auc(labels, scalar_outputs)
+            print('--- AUROC, AUPRC: ', auroc, auprc) 
             print('--- AVG peak classification time: ', np.mean(times))
             accuracy = compute_accuracy(labels, binary_outputs_local)
             print('--- Accuracy: ', accuracy)

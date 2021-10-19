@@ -164,7 +164,7 @@ class Nbeats_alpha(nn.Module):
         self.relu = nn.ReLU()
 
         self.nbeats_alpha1 = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK],
-                                       nb_blocks_per_stack=2,
+                                       nb_blocks_per_stack=self.num_layers,
                                        target_size=num_classes,
                                        input_size=input_size,
                                        thetas_dims=(32, 32),
@@ -172,7 +172,7 @@ class Nbeats_alpha(nn.Module):
                                        hidden_layer_units=self.hidden_size)
 
         self.nbeats_alpha2 = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK],
-                                       nb_blocks_per_stack=1,
+                                       nb_blocks_per_stack=self.num_layers,
                                        target_size=num_classes,
                                        input_size=input_size,
                                        thetas_dims=(32, 32),
@@ -217,17 +217,17 @@ class Nbeats_beta(nn.Module):
         self.linea_multiplier = input_size
         if input_size > 6:
             self.linea_multiplier = 6
-        self.hidden_size = 1
-        self.num_layers = 1
+        #self.hidden_size = 1
+        #self.num_layers = 3
         self.input_size = 1
 
         self.nbeats_beta = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK],
-                                     nb_blocks_per_stack=1,
+                                     nb_blocks_per_stack=self.num_layers,
                                      target_size=num_classes,
                                      input_size=self.input_size,
                                      thetas_dims=(32, 32),
                                      classes=self.classes,
-                                     hidden_layer_units=17)
+                                     hidden_layer_units=self.hidden_size)
 
         self.fc = nn.Linear(input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier,
                             num_classes)  # hidden_size, 128)  # fully connected 1# fully connected last layer
@@ -283,8 +283,8 @@ class LSTM_ECG(nn.Module):
             self.linea_multiplier = input_size
             if input_size > 6:
                 self.linea_multiplier = 6
-            self.hidden_size=1
-            self.num_layers=1
+            #self.hidden_size=1
+            #self.num_layers=1
             self.input_size=1
             self.lstm_alpha1 = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size,
                                        num_layers=self.num_layers, batch_first=True, bidirectional=False)
@@ -294,10 +294,10 @@ class LSTM_ECG(nn.Module):
 
     def forward(self, rr_x, rr_wavelets):
         if self.model_type == 'alpha':
-            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # hidden state
-            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # internal state
-            h_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # hidden state
-            c_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # internal state
+            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
+            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # internal state
+            h_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
+            c_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # internal state
 
             output_alpha1, (hn_alpha1, cn) = self.lstm_alpha1(rr_x, (h_0, c_0))  # lstm with input, hidden, and internal state
             output_alpha2, (hn_alpha2, cn) = self.lstm_alpha2(rr_wavelets, (h_1, c_1))  # lstm with input, hidden, and internal state
@@ -309,8 +309,8 @@ class LSTM_ECG(nn.Module):
             out = self.fc(out)  # Final Output
             return out
         else:
-            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # hidden state
-            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:1')))  # internal state
+            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
+            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # internal state
 
             output_beta, (hn_beta, cn) = self.lstm_alpha1(rr_wavelets, (h_0, c_0))
 
@@ -318,6 +318,113 @@ class LSTM_ECG(nn.Module):
             out = self.relu(out)  # relu
             out = self.fc(out)  # Final Output
         return out
+
+
+
+
+class GRU_ECG_ALPHA(nn.Module):
+    def __init__(self,
+                 input_size,
+                 num_classes,
+                 hidden_size,
+                 num_layers,
+                 seq_length,
+                 model_type='alpha',
+                 classes = []):
+        super(GRU_ECG_ALPHA, self).__init__()
+
+        self.num_classes = num_classes  # number of classes
+        self.num_layers = num_layers  # number of layers
+        self.input_size = input_size  # input size
+        self.hidden_size = hidden_size  # hidden state
+        self.seq_length = seq_length  # sequence length
+        self.model_type = model_type
+        self.classes = classes
+        self.sigmoid = nn.Sigmoid()
+        self.when_bidirectional = 1 # if bidirectional = True, then it has to be equal to 2
+        print(f'| GRU_ECG_ALPHA')
+
+
+        #self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
+        # The linear layer that maps from hidden state space to tag space
+        self.gru_alpha1 = nn.GRU(input_size=input_size, hidden_size=hidden_size,
+                            num_layers=num_layers, batch_first=True, bidirectional=False)
+        self.gru_alpha2 = nn.GRU(input_size=input_size, hidden_size=hidden_size,
+                                       num_layers=num_layers, batch_first=True, bidirectional=False)
+
+        self.fc_1 = nn.Linear(hidden_size*541, 128)#hidden_size, 128)  # fully connected 1
+        self.fc = nn.Linear(128, num_classes)  # fully connected last layer
+        self.relu = nn.ReLU()
+
+    def forward(self, rr_x, rr_wavelets):
+        h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
+        h_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
+
+        output_alpha1, hn_alpha1 = self.gru_alpha1(rr_x, h_0)  # lstm with input, hidden, and internal state
+        output_alpha2, hn_alpha2 = self.gru_alpha2(rr_wavelets, h_1)  # lstm with input, hidden, and internal state
+        tmp = torch.hstack((output_alpha1, output_alpha2))
+        tmp = torch.flatten(tmp, start_dim=1)
+
+        out = self.fc_1(tmp)  # first Dense
+        out = self.relu(out)  # relu
+        out = self.fc(out)  # Final Output
+        return out
+
+
+
+class GRU_ECG_BETA(nn.Module):
+    def __init__(self,
+                 input_size,
+                 num_classes,
+                 hidden_size,
+                 num_layers,
+                 seq_length,
+                 model_type='alpha',
+                 classes = []):
+        super(GRU_ECG_BETA, self).__init__()
+
+        self.num_classes = num_classes  # number of classes
+        self.num_layers = num_layers  # number of layers
+        self.input_size = input_size  # input size
+        self.hidden_size = hidden_size  # hidden state
+        self.seq_length = seq_length  # sequence length
+        self.model_type = model_type
+        self.classes = classes
+        self.sigmoid = nn.Sigmoid()
+        self.when_bidirectional = 1 # if bidirectional = True, then it has to be equal to 2
+        print(f'| GRU_ECG_BETA')
+
+
+        #self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
+        # The linear layer that maps from hidden state space to tag space
+        self.linea_multiplier = input_size
+        if input_size > 6:
+            self.linea_multiplier = 6
+        #self.hidden_size=1
+        #self.num_layers=1
+        self.input_size=1
+        self.gru_beta = nn.GRU(input_size=self.input_size, hidden_size=self.hidden_size,
+                                       num_layers=self.num_layers, batch_first=True, bidirectional=False)
+        self.fc = nn.Linear(input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier, num_classes)
+        print("fc linear input size")
+        print(input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier)
+        self.relu = nn.ReLU()
+
+    def forward(self, pca_features):
+        h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, pca_features.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
+        output_beta, hn_beta = self.gru_beta(pca_features, h_0)
+
+        out = torch.squeeze(output_beta)
+        print("out shape squeze")
+        print(out.shape)
+        out = self.relu(out)  # relua
+        print("out shape po relu")
+        print(out.shape)
+        out = self.fc(out)  # Final Output
+        return out
+
+
+
 
 
 
@@ -331,8 +438,8 @@ class BlendMLP(nn.Module):
 
     def forward(self, rr_x, rr_wavelets, pca_features):
         x1 = self.modelA(rr_x, rr_wavelets)
-        x2 = self.modelB(rr_x, pca_features) # FOR LSTM
-        #x2 = self.modelB(pca_features) #FOR NBEATS
+        #x2 = self.modelB(rr_x, pca_features) # FOR LSTM
+        x2 = self.modelB(pca_features) #FOR NBEATS and GRU
 
         if x1.shape == x2.shape:
             out = torch.cat((x1, x2), dim=1)
