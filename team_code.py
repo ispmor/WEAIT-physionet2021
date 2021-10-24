@@ -199,15 +199,15 @@ def training_code(data_directory, model_directory):
             weights = calculate_pos_weights(sorted_classes_numbers.values())
             print(weights)
             
-            print("Creating GRU  -------------> HIDDEN SIZE = 17 insted of 17")
-            print("Creating GRU  -------------> NUM_LAYERS = 4 INSTEAD OF 1")
-            print("Creating GRU  BETA --------> HIDDEN_SIZE = 17 instead of 17")
-            print("Creating GRU  BETA --------> NUM_LAUERS = 1 INSTEAD OF 1")
+            print("Creating LSTM_PEEPHOLE  -------------> HIDDEN SIZE = 17 insted of 17")
+            print("Creating LSTM_PEEPHOLE  -------------> NUM_LAYERS = 4 INSTEAD OF 1")
+            print("Creating LSTM_PEEPHOLE  BETA --------> HIDDEN_SIZE = 1 instead of 1")
+            print("Creating LSTM_PEEPHOLE  BETA --------> NUM_LAUERS = 1 INSTEAD OF 1")
             
             
             torch.manual_seed(17)
-            print("GRU")
-            net = GRU_ECG_ALPHA(input_size=len(leads),
+            print("LSTM_PEEPHOLE")
+            net = LSTMPeephole_ALPHA(input_size=len(leads),
                        num_classes=len(selected_classes),
                        hidden_size=17,
                        num_layers=4,
@@ -217,7 +217,7 @@ def training_code(data_directory, model_directory):
 
             net.cuda()
             torch.manual_seed(17)
-            net_beta = GRU_ECG_BETA(input_size=len(leads),
+            net_beta = LSTMPeephole_BETA(input_size=len(leads),
                             num_classes=len(selected_classes),
                             hidden_size=17,
                             num_layers=1,
