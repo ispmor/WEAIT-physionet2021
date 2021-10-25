@@ -219,8 +219,8 @@ class Nbeats_beta(nn.Module):
         self.linea_multiplier = input_size
         if input_size > 6:
             self.linea_multiplier = 6
-        #self.hidden_size = 1
-        #self.num_layers = 3
+        # self.hidden_size = 1
+        # self.num_layers = 3
         self.input_size = 1
 
         self.nbeats_beta = NBeatsNet(stack_types=[NBeatsNet.GENERIC_BLOCK],
@@ -243,11 +243,6 @@ class Nbeats_beta(nn.Module):
         return out
 
 
-
-
-
-
-    
 class LSTM_ECG(nn.Module):
     def __init__(self,
                  input_size,
@@ -256,7 +251,7 @@ class LSTM_ECG(nn.Module):
                  num_layers,
                  seq_length,
                  model_type='alpha',
-                 classes = []):
+                 classes=[]):
         super(LSTM_ECG, self).__init__()
 
         self.num_classes = num_classes  # number of classes
@@ -267,42 +262,52 @@ class LSTM_ECG(nn.Module):
         self.model_type = model_type
         self.classes = classes
         self.sigmoid = nn.Sigmoid()
-        self.when_bidirectional = 1 # if bidirectional = True, then it has to be equal to 2
+        self.when_bidirectional = 1  # if bidirectional = True, then it has to be equal to 2
         print(f'| LSTM_ECG')
 
-
-        #self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
+        # self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
         # The linear layer that maps from hidden state space to tag space
         self.lstm_alpha1 = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
-                            num_layers=num_layers, batch_first=True, bidirectional=False)
+                                   num_layers=num_layers, batch_first=True, bidirectional=False)
         if model_type == 'alpha':
             self.lstm_alpha2 = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
                                        num_layers=num_layers, batch_first=True, bidirectional=False)
 
-            self.fc_1 = nn.Linear(hidden_size*541, 128)#hidden_size, 128)  # fully connected 1
+            self.fc_1 = nn.Linear(hidden_size * 541, 128)  # hidden_size, 128)  # fully connected 1
             self.fc = nn.Linear(128, num_classes)  # fully connected last layer
         else:
             self.linea_multiplier = input_size
             if input_size > 6:
                 self.linea_multiplier = 6
-            #self.hidden_size=1
-            #self.num_layers=1
-            self.input_size=1
+            # self.hidden_size=1
+            # self.num_layers=1
+            self.input_size = 1
             self.lstm_alpha1 = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size,
                                        num_layers=self.num_layers, batch_first=True, bidirectional=False)
-            self.fc = nn.Linear(input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier, num_classes)
+            self.fc = nn.Linear(
+                input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier, num_classes)
 
         self.relu = nn.ReLU()
 
     def forward(self, rr_x, rr_wavelets):
         if self.model_type == 'alpha':
-            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
-            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # internal state
-            h_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
-            c_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # internal state
+            h_0 = autograd.Variable(
+                torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                            device=torch.device('cuda:0')))  # hidden state
+            c_0 = autograd.Variable(
+                torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                            device=torch.device('cuda:0')))  # internal state
+            h_1 = autograd.Variable(
+                torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                            device=torch.device('cuda:0')))  # hidden state
+            c_1 = autograd.Variable(
+                torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                            device=torch.device('cuda:0')))  # internal state
 
-            output_alpha1, (hn_alpha1, cn) = self.lstm_alpha1(rr_x, (h_0, c_0))  # lstm with input, hidden, and internal state
-            output_alpha2, (hn_alpha2, cn) = self.lstm_alpha2(rr_wavelets, (h_1, c_1))  # lstm with input, hidden, and internal state
+            output_alpha1, (hn_alpha1, cn) = self.lstm_alpha1(rr_x,
+                                                              (h_0, c_0))  # lstm with input, hidden, and internal state
+            output_alpha2, (hn_alpha2, cn) = self.lstm_alpha2(rr_wavelets,
+                                                              (h_1, c_1))  # lstm with input, hidden, and internal state
             tmp = torch.hstack((output_alpha1, output_alpha2))
             tmp = torch.flatten(tmp, start_dim=1)
 
@@ -311,8 +316,12 @@ class LSTM_ECG(nn.Module):
             out = self.fc(out)  # Final Output
             return out
         else:
-            h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
-            c_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # internal state
+            h_0 = autograd.Variable(
+                torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                            device=torch.device('cuda:0')))  # hidden state
+            c_0 = autograd.Variable(
+                torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                            device=torch.device('cuda:0')))  # internal state
 
             output_beta, (hn_beta, cn) = self.lstm_alpha1(rr_wavelets, (h_0, c_0))
 
@@ -320,8 +329,6 @@ class LSTM_ECG(nn.Module):
             out = self.relu(out)  # relu
             out = self.fc(out)  # Final Output
         return out
-
-
 
 
 class GRU_ECG_ALPHA(nn.Module):
@@ -332,7 +339,7 @@ class GRU_ECG_ALPHA(nn.Module):
                  num_layers,
                  seq_length,
                  model_type='alpha',
-                 classes = []):
+                 classes=[]):
         super(GRU_ECG_ALPHA, self).__init__()
 
         self.num_classes = num_classes  # number of classes
@@ -343,24 +350,25 @@ class GRU_ECG_ALPHA(nn.Module):
         self.model_type = model_type
         self.classes = classes
         self.sigmoid = nn.Sigmoid()
-        self.when_bidirectional = 1 # if bidirectional = True, then it has to be equal to 2
+        self.when_bidirectional = 1  # if bidirectional = True, then it has to be equal to 2
         print(f'| GRU_ECG_ALPHA')
 
-
-        #self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
+        # self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
         # The linear layer that maps from hidden state space to tag space
         self.gru_alpha1 = nn.GRU(input_size=input_size, hidden_size=hidden_size,
-                            num_layers=num_layers, batch_first=True, bidirectional=False)
+                                 num_layers=num_layers, batch_first=True, bidirectional=False)
         self.gru_alpha2 = nn.GRU(input_size=input_size, hidden_size=hidden_size,
-                                       num_layers=num_layers, batch_first=True, bidirectional=False)
+                                 num_layers=num_layers, batch_first=True, bidirectional=False)
 
-        self.fc_1 = nn.Linear(hidden_size*541, 128)#hidden_size, 128)  # fully connected 1
+        self.fc_1 = nn.Linear(hidden_size * 541, 128)  # hidden_size, 128)  # fully connected 1
         self.fc = nn.Linear(128, num_classes)  # fully connected last layer
         self.relu = nn.ReLU()
 
     def forward(self, rr_x, rr_wavelets):
-        h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
-        h_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
+        h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # hidden state
+        h_1 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # hidden state
 
         output_alpha1, hn_alpha1 = self.gru_alpha1(rr_x, h_0)  # lstm with input, hidden, and internal state
         output_alpha2, hn_alpha2 = self.gru_alpha2(rr_wavelets, h_1)  # lstm with input, hidden, and internal state
@@ -373,7 +381,6 @@ class GRU_ECG_ALPHA(nn.Module):
         return out
 
 
-
 class GRU_ECG_BETA(nn.Module):
     def __init__(self,
                  input_size,
@@ -382,7 +389,7 @@ class GRU_ECG_BETA(nn.Module):
                  num_layers,
                  seq_length,
                  model_type='alpha',
-                 classes = []):
+                 classes=[]):
         super(GRU_ECG_BETA, self).__init__()
 
         self.num_classes = num_classes  # number of classes
@@ -393,37 +400,40 @@ class GRU_ECG_BETA(nn.Module):
         self.model_type = model_type
         self.classes = classes
         self.sigmoid = nn.Sigmoid()
-        self.when_bidirectional = 1 # if bidirectional = True, then it has to be equal to 2
+        self.when_bidirectional = 1  # if bidirectional = True, then it has to be equal to 2
         print(f'| GRU_ECG_BETA')
 
-
-        #self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
+        # self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
         # The linear layer that maps from hidden state space to tag space
         self.linea_multiplier = input_size
         if input_size > 6:
             self.linea_multiplier = 6
-        #self.hidden_size=1
-        #self.num_layers=1
-        self.input_size=1
+        # self.hidden_size=1
+        # self.num_layers=1
+        self.input_size = 1
         self.gru_beta = nn.GRU(input_size=self.input_size, hidden_size=self.hidden_size,
-                                       num_layers=self.num_layers, batch_first=True, bidirectional=False)
-        #self.fc_1 = nn.Linear(hidden_size, 1)
-        self.fc = nn.Linear((input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier) * hidden_size, num_classes)
+                               num_layers=self.num_layers, batch_first=True, bidirectional=False)
+        # self.fc_1 = nn.Linear(hidden_size, 1)
+        self.fc = nn.Linear(
+            (input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier) * hidden_size,
+            num_classes)
         self.relu = nn.ReLU()
 
     def forward(self, pca_features):
-        h_0 = autograd.Variable(torch.zeros(self.num_layers * self.when_bidirectional, pca_features.size(0), self.hidden_size, device=torch.device('cuda:0')))  # hidden state
+        h_0 = autograd.Variable(
+            torch.zeros(self.num_layers * self.when_bidirectional, pca_features.size(0), self.hidden_size,
+                        device=torch.device('cuda:0')))  # hidden state
         output_beta, hn_beta = self.gru_beta(pca_features, h_0)
 
-        #out = torch.squeeze(output_beta)
-        out=torch.flatten(output_beta, start_dim=1)
+        # out = torch.squeeze(output_beta)
+        out = torch.flatten(output_beta, start_dim=1)
         out = self.relu(out)  # relua
-        #out = self.fc_1(out)
+        # out = self.fc_1(out)
         out = self.fc(out)  # Final Output
         return out
 
 
-class JitLSTMCell(jit.ScriptModule):
+class JitLSTMCell(nn.Module):
 
     def __init__(self, input_size, hidden_size):
         super(JitLSTMCell, self).__init__()
@@ -443,33 +453,39 @@ class JitLSTMCell(jit.ScriptModule):
 
         self.reset_parameter()
 
-    @jit.ignore(drop=True)
     def reset_parameter(self):
         stdv = 1.0 / math.sqrt(self.hidden_size)
         for weight in self.parameters():
             nn.init.uniform_(weight, -stdv, stdv)
 
-    @jit.script_method
     def forward(self, input, state):
         # type: (Tensor, Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
+        batch_size, sequence_size, input_size = input.size()
+        hidden_seq = []
         hx, cx = state
-        xh = (torch.mm(input, self.weight_ih.t()) + self.bias_ih + torch.mm(hx, self.weight_hh.t()) + self.bias_hh)
+        for t in range(sequence_size):
+            inp = input[:, t, :]
+            xh = (torch.mm(inp, self.weight_ih.t()) + self.bias_ih + torch.mm(hx, self.weight_hh.t()) + self.bias_hh)
 
-        i, f, _c, o = xh.chunk(4, 1)
+            i, f, _c, o = xh.chunk(4, 1)
 
-        i = torch.sigmoid(i + (self.weight_ch_i * cx))
-        f = torch.sigmoid(f + (self.weight_ch_f * cx))
-        _c = torch.tanh(_c)
+            i = torch.sigmoid(i + (self.weight_ch_i * cx))
+            f = torch.sigmoid(f + (self.weight_ch_f * cx))
+            _c = torch.tanh(_c)
 
-        cy = (f * cx) + (i * _c)
+            cy = (f * cx) + (i * _c)
 
-        o = torch.sigmoid(o + (self.weight_ch_o * cy))
-        hy = o * torch.tanh(cy)
+            o = torch.sigmoid(o + (self.weight_ch_o * cy))
+            hy = o * torch.tanh(cy)
+            hidden_seq.append(hy.unsqueeze(0))
 
-        return hy, (hy, cy)
+        hidden_seq = torch.cat(hidden_seq, dim=0)
+        hidden_seq = hidden_seq.transpose(0, 1).contiguous()
+
+        return hidden_seq, (hx, cx)
 
 
-class LSTMPeephole_ALPHA(jit.ScriptModule):
+class LSTMPeephole_ALPHA(nn.Module):
     def __init__(self,
                  input_size,
                  num_classes,
@@ -477,7 +493,7 @@ class LSTMPeephole_ALPHA(jit.ScriptModule):
                  num_layers,
                  seq_length,
                  model_type='alpha',
-                 classes = []):
+                 classes=[]):
         super(LSTMPeephole_ALPHA, self).__init__()
 
         self.num_classes = num_classes  # number of classes
@@ -488,7 +504,7 @@ class LSTMPeephole_ALPHA(jit.ScriptModule):
         self.model_type = model_type
         self.classes = classes
         self.sigmoid = nn.Sigmoid()
-        self.when_bidirectional = 1 # if bidirectional = True, then it has to be equal to 2
+        self.when_bidirectional = 1  # if bidirectional = True, then it has to be equal to 2
 
         print(f'| LSTM_PEEPHOLE_ALPHA')
 
@@ -502,34 +518,31 @@ class LSTMPeephole_ALPHA(jit.ScriptModule):
         self.relu = nn.ReLU()
 
     def forward(self, rr_x, rr_wavelets):
-        h_0 = autograd.Variable(torch.zeros(rr_x.size(1), self.hidden_size,
+        h_0 = autograd.Variable(torch.zeros(rr_x.size(0), self.hidden_size,
                                             device=torch.device('cuda:0')))  # hidden state
-        c_0 = autograd.Variable(torch.zeros( rr_x.size(1), self.hidden_size,
+        c_0 = autograd.Variable(torch.zeros(rr_x.size(0), self.hidden_size,
                                             device=torch.device('cuda:0')))  # internal state
-        h_1 = autograd.Variable(torch.zeros( rr_wavelets.size(1), self.hidden_size,
+        h_1 = autograd.Variable(torch.zeros(rr_wavelets.size(0), self.hidden_size,
                                             device=torch.device('cuda:0')))  # hidden state
-        c_1 = autograd.Variable(torch.zeros(rr_wavelets.size(1), self.hidden_size,
+        c_1 = autograd.Variable(torch.zeros(rr_wavelets.size(0), self.hidden_size,
                                             device=torch.device('cuda:0')))  # internal state
 
-        output = []
-        for batch in range(rr_x.size(0)):
-            oa1 = 0
-            oa2 = 0
-            for i in range(self.num_layers):
-                oa1, (h_0, c_0) = self.lstmpeephole_alpha1(rr_x[batch], (h_0, c_0))  # lstm with input, hidden, and internal state
-                oa2, (h_1, c_1) = self.lstmpeephole_alpha2(rr_wavelets[batch], (h_1, c_1))  # lstm with input, hidden, and internal state
 
-            tmp = torch.vstack((oa1, oa2))
-            tmp = torch.flatten(tmp, start_dim=0)
+        oa1, (h_0, c_0) = self.lstmpeephole_alpha1(rr_x,
+                                                   (h_0, c_0))  # lstm with input, hidden, and internal state
+        oa2, (h_1, c_1) = self.lstmpeephole_alpha2(rr_wavelets,
+                                                   (h_1, c_1))  # lstm with input, hidden, and internal state
 
-            out = self.fc_1(tmp)  # first Dense
-            out = self.relu(out)  # relu
-            output.append(self.fc(out))  # Final Output
-        return torch.stack(output)
+        tmp = torch.hstack((oa1, oa2))
+        tmp = torch.flatten(tmp, start_dim=1)
+
+        out = self.fc_1(tmp)  # first Dense
+        out = self.relu(out)  # relu
+        out = self.fc(out) # Final Output
+        return out
 
 
-
-class LSTMPeephole_BETA(jit.ScriptModule):
+class LSTMPeephole_BETA(nn.Module):
     def __init__(self,
                  input_size,
                  num_classes,
@@ -537,7 +550,7 @@ class LSTMPeephole_BETA(jit.ScriptModule):
                  num_layers,
                  seq_length,
                  model_type='beta',
-                 classes = []):
+                 classes=[]):
         super(LSTMPeephole_BETA, self).__init__()
 
         self.num_classes = num_classes  # number of classes
@@ -548,7 +561,7 @@ class LSTMPeephole_BETA(jit.ScriptModule):
         self.model_type = model_type
         self.classes = classes
         self.sigmoid = nn.Sigmoid()
-        self.when_bidirectional = 1 # if bidirectional = True, then it has to be equal to 2
+        self.when_bidirectional = 1  # if bidirectional = True, then it has to be equal to 2
 
         print(f'| LSTM_PEEPHOLE_BETA')
 
@@ -563,30 +576,192 @@ class LSTMPeephole_BETA(jit.ScriptModule):
         # The linear layer that maps from hidden state space to tag space
         self.lstmpeephole_beta = JitLSTMCell(input_size=self.input_size, hidden_size=hidden_size)
 
-        self.fc = nn.Linear((input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier) * hidden_size, num_classes)
+        self.fc = nn.Linear(
+            (input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier) * hidden_size,
+            num_classes)
         self.relu = nn.ReLU()
 
     def forward(self, pca_features):
-        h_0 = autograd.Variable(torch.zeros(pca_features.size(1), self.hidden_size,
-                        device=torch.device('cuda:0')))  # hidden state
+        h_0 = autograd.Variable(torch.zeros(pca_features.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # hidden state
 
-        c_0 = autograd.Variable(torch.zeros(pca_features.size(1), self.hidden_size,
-                        device=torch.device('cuda:0')))  # hidden state
+        c_0 = autograd.Variable(torch.zeros(pca_features.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # hidden state
 
-        output_beta = []
+
+        oa1, (h_0, c_0) = self.lstmpeephole_beta(pca_features,
+                                                 (h_0, c_0))  # lstm with input, hidden, and internal state
+
+        out = torch.flatten(oa1, start_dim=1)
+        out = self.relu(out)  # relu
+        out = self.fc(out)  # Final Output
+        return out
+
+
+class CustomLSTMPeephole(nn.Module):
+    def __init__(self, input_size, hidden_size, peephole=True):
+        super().__init__()
+        self.input_sz = input_size
+        self.hidden_size = hidden_size
+        self.peephole = peephole
+        self.W = nn.Parameter(torch.Tensor(input_size, hidden_size * 4))
+        self.U = nn.Parameter(torch.Tensor(hidden_size, hidden_size * 4))
+        self.bias = nn.Parameter(torch.Tensor(hidden_size * 4))
+        self.init_weights()
+
+    def init_weights(self):
+        stdv = 1.0 / math.sqrt(self.hidden_size)
+        for weight in self.parameters():
+            weight.data.uniform_(-stdv, stdv)
+
+    def forward(self, x,
+                init_states):
+        """Assumes x is of shape (batch, sequence, feature)"""
+        bs, seq_sz, _ = x.size()
+        hidden_seq = []
+
+        h_t, c_t = init_states
+
+        HS = self.hidden_size
+        for t in range(seq_sz):
+            x_t = x[:, t, :]
+            # batch the computations into a single matrix multiplication
+
+            if self.peephole:
+                gates = (torch.mm(x_t, self.U) + torch.mm(c_t, self.W) + self.bias)
+            else:
+                gates = x_t @ self.U + h_t @ self.W + self.bias
+                g_t = torch.tanh(gates[:, HS * 2:HS * 3])
+
+            i_t, f_t, o_t = (
+                torch.sigmoid(gates[:, :HS]),  # input
+                torch.sigmoid(gates[:, HS:HS * 2]),  # forget
+                torch.sigmoid(gates[:, HS * 3:]),  # output
+            )
+
+            if self.peephole:
+                c_t = f_t * c_t + i_t * torch.sigmoid(x_t @ self.U + self.bias)[:, HS * 2:HS * 3]
+                h_t = torch.tanh(o_t * c_t)
+            else:
+                c_t = f_t * c_t + i_t * g_t
+                h_t = o_t * torch.tanh(c_t)
+
+            hidden_seq.append(h_t.unsqueeze(0))
+
+        hidden_seq = torch.cat(hidden_seq, dim=0)
+        # reshape from shape (sequence, batch, feature) to (batch, sequence, feature)
+        hidden_seq = hidden_seq.transpose(0, 1).contiguous()
+
+        return hidden_seq, (h_t, c_t)
+
+
+
+class CustomLSTMPeephole_ALPHA(nn.Module):
+    def __init__(self,
+                 input_size,
+                 num_classes,
+                 hidden_size,
+                 num_layers,
+                 seq_length,
+                 model_type='alpha',
+                 classes=[]):
+        super(CustomLSTMPeephole_ALPHA, self).__init__()
+
+        self.num_classes = num_classes  # number of classes
+        self.num_layers = num_layers  # number of layers
+        self.input_size = input_size  # input size
+        self.hidden_size = hidden_size  # hidden state
+        self.seq_length = seq_length  # sequence length
+        self.model_type = model_type
+        self.classes = classes
+        self.sigmoid = nn.Sigmoid()
+        self.when_bidirectional = 1  # if bidirectional = True, then it has to be equal to 2
+
+        print(f'| LSTM_PEEPHOLE_ALPHA')
+
+        # self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
+        # The linear layer that maps from hidden state space to tag space
+        self.lstmpeephole_alpha1 = CustomLSTMPeephole(input_size=input_size, hidden_size=hidden_size)
+        self.lstmpeephole_alpha2 = CustomLSTMPeephole(input_size=input_size, hidden_size=hidden_size)
+
+        self.fc_1 = nn.Linear(hidden_size * 541, 128)  # hidden_size, 128)  # fully connected 1
+        self.fc = nn.Linear(128, num_classes)  # fully connected last layer
+        self.relu = nn.ReLU()
+
+    def forward(self, rr_x, rr_wavelets):
+        h_0 = autograd.Variable(torch.zeros(rr_x.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # hidden state
+        c_0 = autograd.Variable(torch.zeros(rr_x.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # internal state
+        h_1 = autograd.Variable(torch.zeros(rr_wavelets.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # hidden state
+        c_1 = autograd.Variable(torch.zeros(rr_wavelets.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # internal state
+
         output = []
-        for batch in range(pca_features.size(0)):
-            oa1 = 0
-            for i in range(self.num_layers):
-                oa1, (h_0, c_0) = self.lstmpeephole_beta(pca_features[batch], (h_0, c_0))  # lstm with input, hidden, and internal state
-            #output_beta.append(oa1)
+        oa1, (h_0, c_0) = self.lstmpeephole_alpha1(rr_x, (h_0, c_0))  # lstm with input, hidden, and internal state
+        oa2, (h_1, c_1) = self.lstmpeephole_alpha2(rr_wavelets, (h_1, c_1))  # lstm with input, hidden, and internal state
 
-            #output_alpha1 = torch.stack(output_beta)
+        tmp = torch.hstack((oa1, oa2))
+        tmp = torch.flatten(tmp, start_dim=1)
 
-            out = torch.flatten(oa1, start_dim=0)
-            out = self.relu(out)  # relu
-            output.append(self.fc(out))  # Final Output
-        return torch.stack(output)
+        out = self.fc_1(tmp)  # first Dense
+        out = self.relu(out)  # relu
+        out = self.fc(out)  # Final Output
+        return out
+
+
+
+class CustomLSTMPeephole_BETA(nn.Module):
+    def __init__(self,
+                 input_size,
+                 num_classes,
+                 hidden_size,
+                 num_layers,
+                 seq_length,
+                 model_type='beta',
+                 classes=[]):
+        super(CustomLSTMPeephole_BETA, self).__init__()
+
+        self.num_classes = num_classes  # number of classes
+        self.num_layers = num_layers  # number of layers
+        self.input_size = input_size  # input size
+        self.hidden_size = hidden_size  # hidden state
+        self.seq_length = seq_length  # sequence length
+        self.model_type = model_type
+        self.classes = classes
+        self.sigmoid = nn.Sigmoid()
+        self.when_bidirectional = 1  # if bidirectional = True, then it has to be equal to 2
+
+        print(f'| LSTM_PEEPHOLE_BETA')
+
+        self.linea_multiplier = input_size
+        if input_size > 6:
+            self.linea_multiplier = 6
+        #self.hidden_size=1
+        #self.num_layers=1
+        self.input_size = 1
+
+        self.lstmpeephole_beta = CustomLSTMPeephole(input_size=self.input_size, hidden_size=self.hidden_size)
+
+        self.fc = nn.Linear(
+            (input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier) * self.hidden_size,
+            num_classes)
+        self.relu = nn.ReLU()
+
+    def forward(self, pca_features):
+        h_0 = autograd.Variable(torch.zeros(pca_features.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # hidden state
+
+        c_0 = autograd.Variable(torch.zeros(pca_features.size(0), self.hidden_size,
+                                            device=torch.device('cuda:0')))  # hidden state
+
+        oa1, (h_0, c_0) = self.lstmpeephole_beta(pca_features, (h_0, c_0))  # lstm with input, hidden, and internal state
+
+        out = torch.flatten(oa1, start_dim=1)
+        out = self.relu(out)  # relu
+        out = self.fc(out) # Final Output
+        return out
 
 
 class BlendMLP(nn.Module):
@@ -595,12 +770,12 @@ class BlendMLP(nn.Module):
         self.modelA = modelA
         self.modelB = modelB
         self.classes = classes
-        self.linear = nn.Linear(2*len(classes), len(classes))
+        self.linear = nn.Linear(2 * len(classes), len(classes))
 
     def forward(self, rr_x, rr_wavelets, pca_features):
         x1 = self.modelA(rr_x, rr_wavelets)
-        #x2 = self.modelB(rr_x, pca_features) # FOR LSTM
-        x2 = self.modelB(pca_features) #FOR NBEATS and GRU
+        # x2 = self.modelB(rr_x, pca_features) # FOR LSTM
+        x2 = self.modelB(pca_features)  # FOR NBEATS and GRU
 
         if x1.shape == x2.shape:
             out = torch.cat((x1, x2), dim=1)
