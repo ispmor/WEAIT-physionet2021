@@ -199,59 +199,59 @@ def training_code(data_directory, model_directory):
             weights = calculate_pos_weights(sorted_classes_numbers.values())
             print(weights)
             
-            print("Creating LSTM_PEEPHOLE  -------------> HIDDEN SIZE = 17 insted of 17")
-            print("Creating LSTM_PEEPHOLE  -------------> NUM_LAYERS = 4 INSTEAD OF 1")
-            print("Creating LSTM_PEEPHOLE  BETA --------> HIDDEN_SIZE = 1 instead of 1")
-            print("Creating LSTM_PEEPHOLE  BETA --------> NUM_LAUERS = 1 INSTEAD OF 1")
+            print("Creating NBEATS  -------------> HIDDEN SIZE = 7 insted of 17")
+            print("Creating NBEATS  -------------> NUM_LAYERS = 2 INSTEAD OF 1")
+            print("Creating NBEATS  BETA --------> HIDDEN_SIZE = 7 instead of 1")
+            print("Creating NBEATS  BETA --------> NUM_LAUERS = 2 INSTEAD OF 1")
             
             
-            torch.manual_seed(17)
-            print("LSTM_PEEPHOLE")
-            net = LSTMPeephole_ALPHA(input_size=len(leads),
-                       num_classes=len(selected_classes),
-                       hidden_size=17,
-                       num_layers=4,
-                       seq_length=single_peak_length,
-                       model_type='alpha',
-                       classes=selected_classes)
+            #torch.manual_seed(17)
+            #print("LSTM_PEEPHOLE")
+            #net = LSTMPeephole_ALPHA(input_size=len(leads),
+            #           num_classes=len(selected_classes),
+            #           hidden_size=17,
+            #           num_layers=1,
+            #           seq_length=single_peak_length,
+            #           model_type='alpha',
+            #           classes=selected_classes)
 
-            net.cuda()
-            torch.manual_seed(17)
-            net_beta = LSTMPeephole_BETA(input_size=len(leads),
-                            num_classes=len(selected_classes),
-                            hidden_size=17,
-                            num_layers=1,
-                            seq_length=single_peak_length,
-                            model_type='beta',
-                            classes=selected_classes)
-            net_beta.cuda()
+            #net.cuda()
+            #torch.manual_seed(17)
+            #net_beta = LSTMPeephole_BETA(input_size=len(leads),
+            #                num_classes=len(selected_classes),
+            #                hidden_size=17,
+            #                num_layers=1,
+            #                seq_length=single_peak_length,
+            #                model_type='beta',
+            #                classes=selected_classes)
+            #net_beta.cuda()
            
 
             
             
             
             
-            #torch.manual_seed(17)
-            #net = Nbeats_alpha(input_size=len(leads),
-            #               num_classes=len(selected_classes),
-            #               hidden_size=3,
-            #               seq_length=353,
-            #               model_type='alpha',
-            #               classes=selected_classes,
-            #               num_layers=1)
+            torch.manual_seed(17)
+            net = Nbeats_alpha(input_size=len(leads),
+                           num_classes=len(selected_classes),
+                           hidden_size=7,
+                           seq_length=353,
+                           model_type='alpha',
+                           classes=selected_classes,
+                           num_layers=2)
 
-            #net.cuda()
+            net.cuda()
 
-            #torch.manual_seed(17)
-            #net_beta = Nbeats_beta(input_size=len(leads),
-            #                   num_classes=len(selected_classes),
-            #                   hidden_size=3,
-            #                   seq_length=353,
-            #                   model_type='beta',
-            #                   classes=selected_classes,
-            #                   num_layers=3)
-            #net_beta.cuda()
-            #torch.manual_seed(17)
+            torch.manual_seed(17)
+            net_beta = Nbeats_beta(input_size=len(leads),
+                               num_classes=len(selected_classes),
+                               hidden_size=7,
+                               seq_length=353,
+                               model_type='beta',
+                               classes=selected_classes,
+                               num_layers=2)
+            net_beta.cuda()
+            torch.manual_seed(17)
             #print("LSTM")
             #net = LSTM_ECG(input_size=len(leads),
             #           num_classes=len(selected_classes),
@@ -320,14 +320,14 @@ def training_code(data_directory, model_directory):
 
                     forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
 
-                    y_selected = torch.tensor(y.clone().detach(), device=device)
+                    #y_selected = torch.tensor(y.clone().detach(), device=device)
                     loss = criterion(forecast, y.to(device))  # torch.zeros(size=(16,)))
-                    epoch_loss.append(loss)
+                    #epoch_loss.append(loss)
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
 
-                mean = torch.mean(torch.stack(epoch_loss))
+                #mean = torch.mean(torch.stack(epoch_loss))
 
                 with torch.no_grad():
                     epoch_loss1 = []
@@ -351,7 +351,7 @@ def training_code(data_directory, model_directory):
                                          pca_features.to(device))  # , rr_wavelets.to(device), pca_features.to(device))
 
 
-                        y_selected = torch.tensor(y.clone().detach(), device=device) # <- zmienione
+                        #y_selected = torch.tensor(y.clone().detach(), device=device) # <- zmienione
                         loss = criterion(forecast, y.to(device))
                         epoch_loss1.append(loss)
 
@@ -383,27 +383,50 @@ def training_code(data_directory, model_directory):
 
             del net, net_beta, model, optimizer
 
-            min_mean = 100
-            torch.manual_seed(17)
-            print("GRU")
-            net = GRU_ECG_ALPHA(input_size=len(leads),
-                       num_classes=len(selected_classes),
-                       hidden_size=17,
-                       num_layers=4,
-                       seq_length=single_peak_length,
-                       model_type='alpha',
-                       classes=selected_classes)
+            #min_mean = 100
+            #
+            #torch.manual_seed(17)
+            #print("LSTM_PEEPHOLE")
+            #net = LSTMPeephole_ALPHA(input_size=len(leads),
+            #           num_classes=len(selected_classes),
+            #           hidden_size=17,
+            #           num_layers=1,
+            #           seq_length=single_peak_length,
+            #           model_type='alpha',
+            #           classes=selected_classes)
 
-            net.cuda()
-            torch.manual_seed(17)
-            net_beta = GRU_ECG_BETA(input_size=len(leads),
-                            num_classes=len(selected_classes),
-                            hidden_size=17,
-                            num_layers=1,
-                            seq_length=single_peak_length,
-                            model_type='beta',
-                            classes=selected_classes)
-            net_beta.cuda()
+            #net.cuda()
+            #torch.manual_seed(17)
+            #net_beta = LSTMPeephole_BETA(input_size=len(leads),
+            #                num_classes=len(selected_classes),
+            #                hidden_size=17,
+            #                num_layers=1,
+            #                seq_length=single_peak_length,
+            #                model_type='beta',
+            #                classes=selected_classes)
+            #net_beta.cuda()
+           
+
+            #torch.manual_seed(17)
+            #print("GRU")
+            #net = GRU_ECG_ALPHA(input_size=len(leads),
+            #           num_classes=len(selected_classes),
+            #           hidden_size=17,
+            #           num_layers=4,
+            #           seq_length=single_peak_length,
+            #           model_type='alpha',
+            #           classes=selected_classes)
+
+            #net.cuda()
+            #torch.manual_seed(17)
+            #net_beta = GRU_ECG_BETA(input_size=len(leads),
+            #                num_classes=len(selected_classes),
+            #                hidden_size=17,
+            #                num_layers=1,
+            #                seq_length=single_peak_length,
+            #                model_type='beta',
+            #                classes=selected_classes)
+            #net_beta.cuda()
            
            
            #torch.manual_seed(17)
@@ -429,27 +452,26 @@ def training_code(data_directory, model_directory):
             
             #print("Creating NBEATS")
 
-            #torch.manual_seed(17)
-            #net = Nbeats_alpha(input_size=len(leads),
-            #               num_classes=len(selected_classes),
-            #               hidden_size=3,
-            #               seq_length=353,
-            #               model_type='alpha',
-            #               classes=selected_classes,
-            #               num_layers=1)
+            torch.manual_seed(17)
+            net = Nbeats_alpha(input_size=len(leads),
+                           num_classes=len(selected_classes),
+                           hidden_size=7,
+                           seq_length=353,
+                           model_type='alpha',
+                           classes=selected_classes,
+                           num_layers=2)
 
-            #net.cuda()
+            net.cuda()
 
-            #torch.manual_seed(17)
-            #net_beta = Nbeats_beta(input_size=len(leads),
-            #                   num_classes=len(selected_classes),
-            #                   hidden_size=3,
-            #                   seq_length=353,
-            #                   model_type='beta',
-            #                   classes=selected_classes,
-            #                   num_layers=3)
-            #net_beta.cuda()
-
+            torch.manual_seed(17)
+            net_beta = Nbeats_beta(input_size=len(leads),
+                               num_classes=len(selected_classes),
+                               hidden_size=7,
+                               seq_length=353,
+                               model_type='beta',
+                               classes=selected_classes,
+                               num_layers=2)
+            net_beta.cuda()
 
 
             torch.manual_seed(17)
@@ -490,17 +512,18 @@ def training_code(data_directory, model_directory):
 
                     y_selected = torch.tensor(y.clone().detach(), device=device)
                     loss = criterion(forecast, y_selected)  # torch.zeros(size=(16,)))
-                    epoch_loss.append(loss)
+                   # epoch_loss.append(loss)
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
 
-                mean = torch.mean(torch.stack(epoch_loss))
-                if mean < min_mean:
-                    min_mean = mean
-                    print(f'Savining {len(leads)}-lead ECG model, score: {mean}, epoch: {epoch}...')
-                    save(filename, model, optimizer, list(sorted_classes_numbers.keys()), leads)
-
+                #mean = torch.mean(torch.stack(epoch_loss))
+                #if mean < min_mean:
+                    #min_mean = mean
+                print(f'Savining {len(leads)}-lead ECG model, score: mean, epoch: {epoch}...')
+                save(filename, model, optimizer, list(sorted_classes_numbers.keys()), leads)
+                #del mean
+                #del epoch_loss
             weights_file = 'weights_eval.csv'
             classes_eval, weights_eval = load_weights(weights_file)
 
