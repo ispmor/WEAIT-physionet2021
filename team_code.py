@@ -577,7 +577,7 @@ def run_model(model, header, recording):
     if len(x_features) == 0:
         labels = np.zeros(len(classes))
         probabilities_mean = np.zeros(len(classes))
-        return classes, labels, probabilities_mean, 0
+        return classes, labels, probabilities_mean#, 0
     else:
         x = torch.transpose(x_features, 1, 2)
         rr_features = torch.transpose(rr_features, 1, 2)
@@ -612,7 +612,7 @@ def run_model(model, header, recording):
             #    else:
             #        labels[i] = 0
 
-            return classes, labels, probabilities_mean, peak_time
+            return classes, labels, probabilities_mean#, peak_time
 
 
 # Define the filename(s) for the trained models. This function is not required. You can change or remove it.
