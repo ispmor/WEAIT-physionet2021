@@ -3,18 +3,18 @@
 # Do *not* edit this script.
 
 import numpy as np, os, sys
-from team_code import load_model, run_model
+#from team_code import load_model, run_model
 from helper_code import *
 
 classes_glob = []
 
 import os, os.path, sys, numpy as np
 from helper_code import get_labels, is_finite_number, load_header, load_outputs
-import seaborn as sn
-import pandas as pd
-import matplotlib.pyplot as plt
+#import seaborn as sn
+#import pandas as pd
+#import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 from sklearn.metrics import roc_curve, auc, precision_recall_curve
 # Test model.
@@ -40,7 +40,8 @@ def test_model(model_directory, data_directory, output_directory):
     labels = load_labels(header_files, classes)
 
     binary_outputs = []
-    scalar_outputs = np.ndarray((num_recordings, 30))
+    scalar_outputs = np.ndarray((num_recordings, 26))
+    c = np.ndarray((num_recordings, 26))
 
     # Create a folder for the outputs if it does not already exist.
     if not os.path.isdir(output_directory):
@@ -65,6 +66,7 @@ def test_model(model_directory, data_directory, output_directory):
     print('Running model...')
     returned_classes = None
 
+
     for i in range(num_recordings):
         print('    {}/{}...'.format(i + 1, num_recordings))
 
@@ -75,15 +77,32 @@ def test_model(model_directory, data_directory, output_directory):
 
         # Apply model to recording.
         model = leads_to_model[leads]
-        returned_classes, binary_outputs, scalar_outputs[i] = run_model(model, header, recording)  ### Implement this function!
+        c[i], binary_outputs, scalar_outputs[i] = run_model(model, header, recording)  ### Implement this function!
         # Save model outputs.
 
-    returned_classes = [{c} for c in returned_classes]
+    thresholds_per_class = [0.94649589, 0.75176591, 0.92429638, 0.97407532, 0.92660624, 0.70162058, 0.79427606,
+                            0.99882579, 0.81119329, 0.94413322, 0.99160779, 0.98631829,
+                            0.81352568, 0.81511146, 0.68745172, 0.84047282, 1., 0.89702266, 0.63237596, 0.93686378,
+                            0.9980495, 0.91167629, 0.71462607, 0.6771611, 0.94447708, 0.94156897]
+    print("------------------------ optim?")
+    binary_outputs = [[scalar_outputs[i][j] > t for j, t in enumerate(thresholds_per_class)] for i in
+                      range(len(scalar_outputs))]
+    binary_outputs_local, scalar_outputs_local = load_classifier_outputs(binary_outputs, scalar_outputs, c, classes_glob)
+    auroc, auprc, auroc_classes, auprc_classes = compute_auc(labels, scalar_outputs_local)
+    accuracy = compute_accuracy(labels, binary_outputs_local)
+    print('--- Accuracy: ', accuracy)
+
+    f_measure, f_measure_classes = compute_f_measure(labels, binary_outputs_local)
+    print('--- F-measure: ', f_measure)
+
+    challenge_metric = compute_challenge_metric(weights, labels, binary_outputs_local, classes, sinus_rhythm)
+    print('--- Challenge metric: ', challenge_metric)
+
     thresholds = np.linspace(0.6, 0.85, 25)
     for thr in thresholds:
-        print("THR: ", thr)
+        print("\n\nTHR: ", thr)
         binary_outputs = [scalar_outputs[i] > thr for i in range(len(scalar_outputs))]
-        binary_outputs_local, scalar_outputs_local = load_classifier_outputs(binary_outputs, scalar_outputs, classes, returned_classes)
+        binary_outputs_local, scalar_outputs_local = load_classifier_outputs(binary_outputs, scalar_outputs, c, classes_glob)
         auroc, auprc, auroc_classes, auprc_classes = compute_auc(labels, scalar_outputs_local)
         accuracy = compute_accuracy(labels, binary_outputs_local)
         print('--- Accuracy: ', accuracy)
@@ -99,6 +118,9 @@ def test_model(model_directory, data_directory, output_directory):
         #root, extension = os.path.splitext(tail)
         #output_file = os.path.join(output_directory, root + '.csv')
         #save_outputs(output_file, recording_id, classes, labels, probabilities)
+
+
+
 
     print('Done.')
 
@@ -186,7 +208,7 @@ def load_labels(label_files, classes):
 
 
 # Load outputs from output files.
-def load_classifier_outputs(recording_binary_outputs, recording_scalar_outputs, classes, recording_classes):
+def load_classifier_outputs(recording_binary, recording_scalars, recording_c, classes_glob):
     # The outputs should have the following form:
     #
     # #Record ID
@@ -194,8 +216,10 @@ def load_classifier_outputs(recording_binary_outputs, recording_scalar_outputs, 
     #           0,           1,           1
     #        0.12,        0.34,        0.56
     #
-    num_recordings = len(recording_binary_outputs)
-    num_classes = len(classes)
+
+    num_recordings = len(recording_scalars)
+    num_classes = len(classes_glob)
+
 
     # Use one-hot encoding for the outputs.
     binary_outputs = np.zeros((num_recordings, num_classes), dtype=np.bool)
@@ -203,23 +227,27 @@ def load_classifier_outputs(recording_binary_outputs, recording_scalar_outputs, 
 
     # Iterate over the recordings.
     for i in range(num_recordings):
+        recording_id, recording_classes, recording_binary_outputs, recording_scalar_outputs = i, recording_c[i], recording_binary[i], recording_scalars[i]
 
+        # Allow for equivalent classes and sanitize classifier outputs.
+        recording_binary_outputs = [1 if ((is_finite_number(entry) and float(entry)==1) or (entry in ('True', 'true', 'T', 't'))) else 0 for entry in recording_binary_outputs]
+        recording_scalar_outputs = [float(entry) if is_finite_number(entry) else 0 for entry in recording_scalar_outputs]
+        recording_classes = [{str(int(r))} for r in recording_classes]
         # Allow for unordered/reordered and equivalent classes.
-        for j, x in enumerate(classes):
+        for j, x in enumerate(classes_glob): #<- global classes
             binary_values = list()
             scalar_values = list()
-            for k, y in enumerate(recording_classes):
+            for k, y in enumerate(recording_classes):# <- recording classes
                 if x & y:
                     binary_values.append(recording_binary_outputs[k])
                     scalar_values.append(recording_scalar_outputs[k])
             if binary_values:
-                binary_outputs[i, j] = any(
-                    binary_values[0])  # Define a class as positive if any of the equivalent classes is positive.
+                binary_outputs[i, j] = any(binary_values) # Define a class as positive if any of the equivalent classes is positive.
             if scalar_values:
-                scalar_outputs[i, j] = np.mean(
-                    scalar_values)  # Define the scalar value of a class as the mean value of the scalar values across equivalent classes.
+                scalar_outputs[i, j] = np.mean(scalar_values) # Define the scalar value of a class as the mean value of the scalar values across equivalent classes.
 
     return binary_outputs, scalar_outputs
+
 
 
 # Compute recording-wise accuracy.
@@ -283,15 +311,15 @@ def compute_f_measure(labels, outputs):
     num_recordings, num_classes = np.shape(labels)
 
     A = compute_confusion_matrices(labels, outputs)
-    global classes_glob
-    for i, matrice in enumerate(A):
-        df_cm = pd.DataFrame(matrice, index=['-', '+'], columns=['-', '+'])
-        plt.figure(figsize=(10, 7))
-        sn.heatmap(df_cm, annot=True)
+    #global classes_glob
+    #for i, matrice in enumerate(A):
+        #df_cm = pd.DataFrame(matrice, index=['-', '+'], columns=['-', '+'])
+        #plt.figure(figsize=(10, 7))
+        #sn.heatmap(df_cm, annot=True)
 
-        name = "./plots/" + ''.join(classes_glob[i]) + "confusion_matrix_lstm-20-08.png"
-        plt.savefig(name)
-        plt.close()
+        #name = "./plots/" + ''.join(classes_glob[i]) + "confusion_matrix_lstm-20-08.png"
+        #plt.savefig(name)
+        #plt.close()
 
     f_measure = np.zeros(num_classes)
     for k in range(num_classes):
@@ -311,7 +339,6 @@ def compute_f_measure(labels, outputs):
 
 # Compute macro AUROC and macro AUPRC.
 def compute_auc(labels, outputs):
-    print("LABELS", labels[0])
     num_recordings, num_classes = np.shape(labels)
 
     # Compute and summarize the confusion matrices for each class across at distinct output values.
@@ -424,37 +451,39 @@ def compute_auc(labels, outputs):
     else:
         macro_auprc = float('nan')
 
-    title = 'micro-macro.png'
-    plt.figure()
-    plt.title(title)
-    plt.plot(fpr2["micro"], tpr2["micro"],
-             label='micro-average ROC curve (area = {0:0.2f})'
-                   ''.format(roc_auc["micro"]),
-             color='deeppink', linestyle=':', linewidth=4)
+    # title = 'micro-macro.png'
+    # plt.figure()
+    # plt.title(title)
+    # plt.plot(fpr2["micro"], tpr2["micro"],
+    #          label='micro-average ROC curve (area = {0:0.2f})'
+    #                ''.format(roc_auc["micro"]),
+    #          color='deeppink', linestyle=':', linewidth=4)
+    #
+    # plt.plot(fpr2["macro"], tpr2["macro"],
+    #          label='macro-average ROC curve (area = {0:0.2f})'
+    #                ''.format(roc_auc["macro"]),
+    #          color='navy', linestyle=':', linewidth=4)
+    # plt.plot([0, 1], [0, 1], 'k--')
+    # plt.xlim([0.0, 1.0])
+    # plt.ylim([0.0, 1.05])
+    # plt.xlabel('False Positive Rate')
+    # plt.ylabel('True Positive Rate')
+    # plt.title('Some extension of Receiver operating characteristic to multi-class')
+    # plt.legend(loc="lower right")
+    # plt.savefig(title)
+    # plt.close()
 
-    plt.plot(fpr2["macro"], tpr2["macro"],
-             label='macro-average ROC curve (area = {0:0.2f})'
-                   ''.format(roc_auc["macro"]),
-             color='navy', linestyle=':', linewidth=4)
-    plt.plot([0, 1], [0, 1], 'k--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Some extension of Receiver operating characteristic to multi-class')
-    plt.legend(loc="lower right")
-    plt.savefig(title)
-    plt.close()
-
-    for k in range(num_classes):
-        precision, recall, thresholds = precision_recall_curve(labels[:, k], outputs[:, k])
-        fscore = (2 * precision * recall) / (precision + recall)
-        # locate the index of the largest f score
-        ix = np.argmax(fscore)
-        optim[k] = thresholds[ix]
-        #print('Best Threshold=%f, F-Score=%.3f' % (thresholds[ix], fscore[ix]))
-
-    #print(optim)
+    # global classes_glob
+    # for k, c in enumerate(classes_glob):
+    #     precision, recall, thresholds = precision_recall_curve(labels[:, k], outputs[:, k])
+    #     fscore = (2 * precision * recall) / (precision + recall)
+    #     # locate the index of the largest f score
+    #     ix = np.argmax(fscore)
+    #     optim[k] = thresholds[ix]
+    #     #print('Best Threshold=%f, F-Score=%.3f' % (thresholds[ix], fscore[ix]))
+    #
+    # print("THRESHOLD PER CLASS")
+    # print(optim)
     return macro_auroc, macro_auprc, auroc, auprc
 
 
@@ -477,12 +506,12 @@ def compute_modified_confusion_matrix(labels, outputs):
                     if outputs[i, k]:
                         A[j, k] += 1.0 / normalization
 
-    global classes_glob
-    df_cm = pd.DataFrame(A, index=classes_glob, columns=classes_glob)
-    plt.figure(figsize=(12, 10))
-    sn.heatmap(df_cm, annot=True)
-    plt.savefig("confusion_matrix.png")
-    plt.close()
+    # global classes_glob
+    # df_cm = pd.DataFrame(A, index=classes_glob, columns=classes_glob)
+    # plt.figure(figsize=(12, 10))
+    # sn.heatmap(df_cm, annot=True)
+    # plt.savefig("confusion_matrix.png")
+    # plt.close()
     return A
 
 
