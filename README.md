@@ -1,4 +1,10 @@
-# Python example code for the PhysioNet/Computing in Cardiology Challenge 2021
+# Python example code for the PhysioNet/Computing in Cardiology Challenge 2021 -> Another submission
+
+## IMPORTANT, THE FOLLOWING SUBSECTION DESCRIBES WHAT HAS BEEN CHANGED IN THE CODE SO IT CAN BE SCORED AGAIN ⚠️
+First and foremost we fixed the bugs which stopped us for being officialy scored during official phase of CinC2021 oh hidden dataset (we had troubles in returning floats instead of boolean values so official evaluation functio was previousely givving us the worst possible result).
+Then we also improved our data loader and load balancers. Additionally more modelks were tested locally to gain more insight.
+Hyper parameters were adjusted to improve nbeats performance.
+
 
 ## What's in this repository?
 
