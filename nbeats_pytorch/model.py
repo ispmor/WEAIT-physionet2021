@@ -285,7 +285,7 @@ class LSTM_ECG(nn.Module):
             self.lstm_alpha1 = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size,
                                        num_layers=self.num_layers, batch_first=True, bidirectional=False)
             self.fc = nn.Linear(
-                input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier, num_classes)
+                (input_size * self.linea_multiplier + 363 * self.linea_multiplier + self.linea_multiplier) * self.hidden_size, num_classes)
 
         self.relu = nn.ReLU()
 
@@ -317,15 +317,15 @@ class LSTM_ECG(nn.Module):
             return out
         else:
             h_0 = autograd.Variable(
-                torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                torch.zeros(self.num_layers * self.when_bidirectional, rr_wavelets.size(0), self.hidden_size,
                             device=torch.device('cuda:0')))  # hidden state
             c_0 = autograd.Variable(
-                torch.zeros(self.num_layers * self.when_bidirectional, rr_x.size(0), self.hidden_size,
+                torch.zeros(self.num_layers * self.when_bidirectional, rr_wavelets.size(0), self.hidden_size,
                             device=torch.device('cuda:0')))  # internal state
 
             output_beta, (hn_beta, cn) = self.lstm_alpha1(rr_wavelets, (h_0, c_0))
 
-            out = torch.squeeze(output_beta)
+            out = torch.flatten(output_beta, start_dim=1)
             out = self.relu(out)  # relu
             out = self.fc(out)  # Final Output
         return out
@@ -775,8 +775,8 @@ class BlendMLP(nn.Module):
 
     def forward(self, rr_x, rr_wavelets, pca_features):
         x1 = self.modelA(rr_x, rr_wavelets)
-        # x2 = self.modelB(rr_x, pca_features) # FOR LSTM
-        x2 = self.modelB(pca_features)  # FOR NBEATS and GRU
+        #x2 = self.modelB(rr_x, pca_features) # FOR LSTM
+        x2 = self.modelB(pca_features)  # FOR NBEATS, PEEPHOLE and GRU
 
         if x1.shape == x2.shape:
             out = torch.cat((x1, x2), dim=1)
@@ -784,3 +784,4 @@ class BlendMLP(nn.Module):
             return out
         else:
             return x1
+        return x2

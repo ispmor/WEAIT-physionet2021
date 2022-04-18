@@ -38,7 +38,7 @@ six_leads = ('I', 'II', 'III', 'aVR', 'aVL', 'aVF')
 four_leads = ('I', 'II', 'III', 'V2')
 three_leads = ('I', 'II', 'V2')
 two_leads = ('I', 'II')
-leads_set = [twelve_leads, two_leads, three_leads, four_leads, six_leads]  # USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
+leads_set = [twelve_leads, six_leads, four_leads, three_leads, two_leads]  # USUNIĘTE DŁUŻSZE TRENOWANIE MODELI
 
 single_peak_length = exp["single_peak_length"]
 forecast_length = exp["forecast_length"]
@@ -55,10 +55,9 @@ device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('
 torch.pin_memory = False
 
 classes_numbers = dict(zip(['6374002', '10370003', '17338001', '39732003', '47665007', '59118001', '59931005',
-                            '111975006', '164889003', '164890007', '164909002', '164917005', '164934002',
-                            '164947007', '251146004', '270492004', '284470004', '365413008', '426177001', '426627000',
-                            '426783006', '427084000', '427393009', '445118002', '698252002', '713426002'],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
+                                '111975006', '164889003', '164890007', '164909002', '164917005', '164934002',
+                                '164947007', '251146004', '270492004', '284470004', '365413008', '426177001', '426627000',
+                                '426783006', '427084000', '427393009', '445118002', '698252002', '713426002'], [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]))
 class_files_numbers = dict()
 
 sigmoid = nn.Sigmoid()
@@ -74,6 +73,7 @@ sigmoid = nn.Sigmoid()
 def training_code(data_directory, model_directory):
     required_epochs = dict()
     # Find header and recording files.
+
     print('Finding header and recording files...')
 
     header_files, recording_files = find_challenge_files(data_directory)
@@ -88,7 +88,7 @@ def training_code(data_directory, model_directory):
 
     # Extract classes from dataset.
     print('Extracting classes...')
-
+    print_now()
     classes = set()
 
     for header_file in header_files:
@@ -110,8 +110,12 @@ def training_code(data_directory, model_directory):
     for i, c in enumerate(classes):
         class_index[c] = i
 
+    print_now()
     # Extract features and labels from dataset.
     print('Extracting features and labels...')
+
+    k_folds = 5
+    kfold = KFold(n_splits=k_folds, shuffle=True)
 
     for leads in leads_set:
 
@@ -121,165 +125,220 @@ def training_code(data_directory, model_directory):
             leads_idx.append(i)
 
         print(leads)
+        experiment = SummaryWriter()
 
         torch.manual_seed(17)
         init_dataset = list(range(num_recordings))
-        data_training_full = init_dataset
+        for fold, (data_training_full, data_test) in enumerate(kfold.split(init_dataset)):
+            name = get_model_filename(leads) # + f"_fold{fold}"
+            filename = os.path.join(model_directory, name)
+            lengths = [int(len(data_training_full) * 0.8), len(data_training_full) - int(len(data_training_full) * 0.8)]
+            data_training, data_validation = torch_data.random_split(data_training_full, lengths)
 
-        name = get_model_filename(leads)
-        filename = os.path.join(model_directory, name)
-        lengths = [int(len(data_training_full) * 0.8), len(data_training_full) - int(len(data_training_full) * 0.8)]
-        data_training, data_validation = torch_data.random_split(data_training_full, lengths)
+            global classes_numbers
 
-        global classes_numbers
+            selected_classes = ['6374002', '10370003', '17338001', '39732003', '47665007', '59118001', '59931005',
+                                '111975006', '164889003', '164890007', '164909002', '164917005', '164934002',
+                                '164947007', '251146004', '270492004', '284470004', '365413008', '426177001', '426627000',
+                                '426783006', '427084000', '427393009', '445118002', '698252002', '713426002']
+            #, '427172004','63593006',      '713427006'   , '733534002']
+            num_classes = len(selected_classes)
 
-        selected_classes = ['6374002', '10370003', '17338001', '39732003', '47665007', '59118001', '59931005',
-                            '111975006', '164889003', '164890007', '164909002', '164917005', '164934002',
-                            '164947007', '251146004', '270492004', '284470004', '365413008', '426177001', '426627000',
-                            '426783006', '427084000', '427393009', '445118002', '698252002', '713426002']
-        # , '427172004','63593006',      '713427006'   , '733534002']
-        num_classes = len(selected_classes)
+            weights = None
+            training_filename = f'cinc_database_training_{fold}.h5'
+            validation_filename = f'cinc_database_validation_{fold}.h5'
+            training_full_filename = f'cinc_database_training_full_{fold}.h5'
+            test_filename = f'cinc_database_test_{fold}.h5'
+            ################ CREATE HDF5 DATABASE #############################3
+            if not os.path.isfile(training_full_filename):  # _{len(leads)}_training.h5'):
+                create_hdf5_db(data_training_full, num_classes, header_files, recording_files, selected_classes, twelve_leads,
+                               isTraining=1, selected_classes=selected_classes, filename=training_full_filename)
+                sorted_classes_numbers = dict(sorted(classes_numbers.items(), key=lambda x: int(x[0])))
+                weights = calculate_pos_weights(sorted_classes_numbers.values())
+                np.savetxt("weights_training.csv", weights.detach().cpu().numpy(), delimiter=',')
 
-        weights = None
-        training_filename = f'cinc_database_training.h5'
-        validation_filename = f'cinc_database_validation.h5'
-        training_full_filename = f'cinc_database_training_full.h5'
 
-        ################ CREATE HDF5 DATABASE #############################3
-        if not os.path.isfile(training_full_filename):  # _{len(leads)}_training.h5'):
-            create_hdf5_db(data_training_full, num_classes, header_files, recording_files, selected_classes,
-                           twelve_leads,
-                           isTraining=1, selected_classes=selected_classes, filename=training_full_filename)
-            sorted_classes_numbers = dict(sorted(classes_numbers.items(), key=lambda x: int(x[0])))
+            if not os.path.isfile(training_filename):  # _{len(leads)}_training.h5'):
+                create_hdf5_db(data_training, num_classes, header_files, recording_files, selected_classes, twelve_leads,
+                               isTraining=1, selected_classes=selected_classes, filename=training_filename)
+                sorted_classes_numbers = dict(sorted(classes_numbers.items(), key=lambda x: int(x[0])))
+
+                weights = calculate_pos_weights(sorted_classes_numbers.values())
+                np.savetxt("weights_training.csv", weights.detach().cpu().numpy(), delimiter=',')
+
+
+            if not os.path.isfile(validation_filename):  # {len(leads)}_validation.h5'):
+                create_hdf5_db(data_validation, num_classes, header_files, recording_files, selected_classes, twelve_leads,
+                               isTraining=0, selected_classes=selected_classes, filename=validation_filename)
+
+            if not os.path.isfile(test_filename):  # {len(leads)}_validation.h5'):
+                create_hdf5_db(data_validation, num_classes, header_files, recording_files, selected_classes, twelve_leads,
+                               isTraining=0, selected_classes=selected_classes, filename=test_filename)
+
+            if weights is None and os.path.isfile(training_filename):
+                weights = torch.tensor(np.loadtxt('weights_training.csv', delimiter=','), device=device)
+
+            classes_occurences_filename = f"classes_in_h5_occurrences_new_{fold}.json"
+            if (sum(classes_numbers.values()) == 0 or None in classes_numbers.values()) and os.path.isfile(classes_occurences_filename):
+                with open(classes_occurences_filename, 'r') as f:
+                    classes_numbers = json.load(f)
+            elif (len(classes_numbers.values()) != 0 and all(classes_numbers.values())) and not os.path.isfile(classes_occurences_filename):
+                with open(classes_occurences_filename, 'w') as f:
+                    json.dump(classes_numbers, f)
+
+            classes_to_classify = dict().fromkeys(selected_classes)
+            index_mapping_from_normal_to_selected = dict()
+            tmp_iterator = 0
+            for c in classes:
+                if c in selected_classes:
+                    classes_to_classify[c] = tmp_iterator
+                    index_mapping_from_normal_to_selected[class_index[c]] = tmp_iterator
+                    tmp_iterator += 1
+
+            sorted_classes_numbers = dict(
+                sorted([(k, classes_numbers[k]) for k in classes_to_classify.keys()], key=lambda x: int(x[0])))
+
             weights = calculate_pos_weights(sorted_classes_numbers.values())
-            np.savetxt("weights_training.csv", weights.detach().cpu().numpy(), delimiter=',')
+            print(weights)
 
-        if not os.path.isfile(training_filename):  # _{len(leads)}_training.h5'):
-            create_hdf5_db(data_training, num_classes, header_files, recording_files, selected_classes, twelve_leads,
-                           isTraining=1, selected_classes=selected_classes, filename=training_filename)
-            sorted_classes_numbers = dict(sorted(classes_numbers.items(), key=lambda x: int(x[0])))
+            network = "LSTM_PEEPHOLE"
+            alpha_hs = 7
+            alpha_layers = 2
+            beta_hs = 7
+            beta_layers = 2
+            
+            print_now()
+            print(f"Creating {network}  -------------> HIDDEN SIZE ={alpha_hs} ")
+            print(f"Creating {network}  -------------> NUM_LAYERS = {alpha_layers} ")
+            print(f"Creating {network} BETA --------> HIDDEN_SIZE = {beta_hs}")
+            print(f"Creating {network} BETA --------> NUM_LAUERS = {beta_layers} ")
+            
+            #net, net_beta = get_network(network, alpha_hs, alpha_layers, beta_hs, beta_layers)
+            net, net_beta = get_network(network, alpha_hs, alpha_layers, beta_hs, beta_layers, leads, selected_classes, single_peak_length)
+            #if network in "GRU":
+            #    torch.manual_seed(17)
+            #    print("GRU")
+            #    net = GRU_ECG_ALPHA(input_size=len(leads),
+            #               num_classes=len(selected_classes),
+            #               hidden_size=alpha_hs,
+            #               num_layers=alpha_layers,
+            #               seq_length=single_peak_length,
+            #               model_type='alpha',
+            #               classes=selected_classes)
+            #    net.cuda()
+            #    torch.manual_seed(17)
+            #    net_beta = GRU_ECG_BETA(input_size=len(leads),
+            #                    num_classes=len(selected_classes),
+            #                    hidden_size=beta_hs,
+            #                    num_layers=beta_layers,
+            #                    seq_length=single_peak_length,
+            #                    model_type='beta',
+            #                    classes=selected_classes)
+            #    net_beta.cuda()
+ 
+            #if "LSTM_PEEPHOLE" in network:
+            #    torch.manual_seed(17)
+            #    print("LSTM_PEEPHOLE")
+            #    net = LSTMPeephole_ALPHA(input_size=len(leads),
+            #               num_classes=len(selected_classes),
+            #               hidden_size=alpha_hs,
+            #               num_layers=alpha_layers,
+            #               seq_length=single_peak_length,
+            #               model_type='alpha',
+            #               classes=selected_classes)
 
-            weights = calculate_pos_weights(sorted_classes_numbers.values())
-            np.savetxt("weights_training.csv", weights.detach().cpu().numpy(), delimiter=',')
+            #    net.cuda()
+            #    torch.manual_seed(17)
+            #    net_beta = LSTMPeephole_BETA(input_size=len(leads),
+            #                    num_classes=len(selected_classes),
+            #                    hidden_size=beta_hs,
+            #                    num_layers=beta_layers,
+            #                    seq_length=single_peak_length,
+            #                    model_type='beta',
+            #                    classes=selected_classes)
+            #    net_beta.cuda()
+           
 
-        if not os.path.isfile(validation_filename):  # {len(leads)}_validation.h5'):
-            create_hdf5_db(data_validation, num_classes, header_files, recording_files, selected_classes, twelve_leads,
-                           isTraining=0, selected_classes=selected_classes, filename=validation_filename)
+            #
+            #
+            #
+            #
+            #if network in "NBEATS":
+            #    torch.manual_seed(17)
+            #    net = Nbeats_alpha(input_size=len(leads),
+            #                   num_classes=len(selected_classes),
+            #                   hidden_size=alpha_hs,
+            #                   num_layers=alpha_layers,
+            #                   seq_length=353,
+            #                   model_type='alpha',
+            #                   classes=selected_classes)
+            #    net.cuda()
+            #    torch.manual_seed(17)
+            #    net_beta = Nbeats_beta(input_size=len(leads),
+            #                       num_classes=len(selected_classes),
+            #                       hidden_size=beta_hs,
+            #                       seq_length=353,
+            #                       model_type='beta',
+            #                       classes=selected_classes,
+            #                       num_layers=beta_layers)
+            #    net_beta.cuda()
+            #    torch.manual_seed(17)
+           
 
-        if weights is None and os.path.isfile(training_filename):
-            weights = torch.tensor(np.loadtxt('weights_training.csv', delimiter=','), device=device)
+            #if network in "LSTM":
+            #    torch.manual_seed(17)
+            #    print("LSTM")
+            #    net = LSTM_ECG(input_size=len(leads),
+            #               num_classes=len(selected_classes),
+            #               hidden_size=alpha_hs,
+            #               num_layers=alpha_layers,
+            #               seq_length=single_peak_length,
+            #               model_type='alpha',
+            #               classes=selected_classes)
 
-        classes_occurences_filename = f"classes_in_h5_occurrences_new.json"
-        if (sum(classes_numbers.values()) == 0 or None in classes_numbers.values()) and os.path.isfile(
-                classes_occurences_filename):
-            with open(classes_occurences_filename, 'r') as f:
-                classes_numbers = json.load(f)
-        elif (len(classes_numbers.values()) != 0 and all(classes_numbers.values())) and not os.path.isfile(
-                classes_occurences_filename):
-            with open(classes_occurences_filename, 'w') as f:
-                json.dump(classes_numbers, f)
+            #    net.cuda()
+            #    torch.manual_seed(17)
+            #    net_beta = LSTM_ECG(input_size=len(leads),
+            #                    num_classes=len(selected_classes),
+            #                    hidden_size=beta_hs,
+            #                    num_layers=beta_layers,
+            #                    seq_length=single_peak_length,
+            #                    model_type='beta',
+            #                    classes=selected_classes)
+            #    net_beta.cuda()
+            
+            torch.manual_seed(17)
+            model = BlendMLP(net, net_beta, selected_classes)
+            model.leads = leads
+            model.cuda()
 
-        classes_to_classify = dict().fromkeys(selected_classes)
-        index_mapping_from_normal_to_selected = dict()
-        tmp_iterator = 0
-        for c in classes:
-            if c in selected_classes:
-                classes_to_classify[c] = tmp_iterator
-                index_mapping_from_normal_to_selected[class_index[c]] = tmp_iterator
-                tmp_iterator += 1
+            training_dataset = HDF5Dataset('./' + training_filename, recursive=False,
+                                           load_data=False,
+                                           data_cache_size=4, transform=None, leads=leads_idx)
+            validation_dataset = HDF5Dataset('./' + validation_filename, recursive=False,
+                                               load_data=False,
+                                             data_cache_size=4, transform=None, leads=leads_idx)
 
-        sorted_classes_numbers = dict(
-            sorted([(k, classes_numbers[k]) for k in classes_to_classify.keys()], key=lambda x: int(x[0])))
+            training_data_loader = torch_data.DataLoader(training_dataset, batch_size=1500, shuffle=True, num_workers=6)
+            validation_data_loader = torch_data.DataLoader(validation_dataset, batch_size=1500, shuffle=True, num_workers=6)
 
-        weights = calculate_pos_weights(sorted_classes_numbers.values())
-        print(weights)
+            n_epochs_stop = 6
+            epochs_no_improve = 0
+            min_val_loss = 999
 
-        print("Creating NBEATS  -------------> HIDDEN SIZE = 7 insted of 17")
-        print("Creating NBEATS  -------------> NUM_LAYERS = 2 INSTEAD OF 1")
-        print("Creating NBEATS  BETA --------> HIDDEN_SIZE = 7 instead of 1")
-        print("Creating NBEATS  BETA --------> NUM_LAUERS = 2 INSTEAD OF 1")
+            num_epochs = 25
 
-        torch.manual_seed(17)
-        net = Nbeats_alpha(input_size=len(leads),
-                           num_classes=len(selected_classes),
-                           hidden_size=7,
-                           seq_length=353,
-                           model_type='alpha',
-                           classes=selected_classes,
-                           num_layers=2)
+            best_a = []
+            best_b = []
+            best_model = []
+            criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
+            optimizer = optim.Adam(model.parameters(), lr=0.01)
+            for epoch in range(num_epochs):
+                print(f"...{epoch}/{num_epochs}")
+                local_step = 0
+                epoch_loss = []
 
-        net.cuda()
-
-        torch.manual_seed(17)
-        net_beta = Nbeats_beta(input_size=len(leads),
-                               num_classes=len(selected_classes),
-                               hidden_size=7,
-                               seq_length=353,
-                               model_type='beta',
-                               classes=selected_classes,
-                               num_layers=2)
-        net_beta.cuda()
-        torch.manual_seed(17)
-
-        model = BlendMLP(net, net_beta, selected_classes)
-        model.cuda()
-
-        training_dataset = HDF5Dataset('./' + training_filename, recursive=False,
-                                       load_data=False,
-                                       data_cache_size=4, transform=None, leads=leads_idx)
-        validation_dataset = HDF5Dataset('./' + validation_filename, recursive=False,
-                                         load_data=False,
-                                         data_cache_size=4, transform=None, leads=leads_idx)
-
-        training_data_loader = torch_data.DataLoader(training_dataset, batch_size=1500, shuffle=True, num_workers=6)
-        validation_data_loader = torch_data.DataLoader(validation_dataset, batch_size=1500, shuffle=True, num_workers=6)
-
-        n_epochs_stop = 6
-        epochs_no_improve = 0
-        min_val_loss = 999
-
-        num_epochs = 25
-
-        criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
-        optimizer = optim.Adam(model.parameters(), lr=0.01)
-        for epoch in range(num_epochs):
-            print(f"...{epoch}/{num_epochs}")
-            local_step = 0
-            epoch_loss = []
-
-            for x, y, rr_features, wavelet_features in training_data_loader:
-                x = torch.transpose(x, 1, 2)
-                rr_features = torch.transpose(rr_features, 1, 2)
-                wavelet_features = torch.transpose(wavelet_features, 1, 2)
-
-                rr_x = torch.hstack((rr_features, x))
-                rr_wavelets = torch.hstack((rr_features, wavelet_features))
-
-                pre_pca = torch.hstack((rr_features, x[:, ::2, :], wavelet_features))
-                pca_features = torch.pca_lowrank(pre_pca)
-                pca_features = torch.hstack((pca_features[0].reshape(pca_features[0].shape[0], -1), pca_features[1],
-                                             pca_features[2].reshape(pca_features[2].shape[0], -1)))
-                pca_features = pca_features[:, :, None]
-
-                local_step += 1
-                model.train()
-
-                forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
-
-                # y_selected = torch.tensor(y.clone().detach(), device=device)
-                loss = criterion(forecast, y.to(device))  # torch.zeros(size=(16,)))
-                # epoch_loss.append(loss)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-            # mean = torch.mean(torch.stack(epoch_loss))
-
-            with torch.no_grad():
-                epoch_loss1 = []
-
-                model.eval()
-                for x, y, rr_features, wavelet_features in validation_data_loader:
+                for x, y, rr_features, wavelet_features in training_data_loader:
                     x = torch.transpose(x, 1, 2)
                     rr_features = torch.transpose(rr_features, 1, 2)
                     wavelet_features = torch.transpose(wavelet_features, 1, 2)
@@ -293,116 +352,503 @@ def training_code(data_directory, model_directory):
                                                  pca_features[2].reshape(pca_features[2].shape[0], -1)))
                     pca_features = pca_features[:, :, None]
 
-                    forecast = model(rr_x.to(device), rr_wavelets.to(device),
-                                     pca_features.to(device))
+                    local_step += 1
+                    model.train()
 
-                    loss = criterion(forecast, y.to(device))
-                    epoch_loss1.append(loss)
+                    forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
 
-                mean_val1 = torch.mean(torch.stack(epoch_loss1))
-                print("Epoch: %d Validation loss: %f" % (epoch, mean_val1))
+                    #y_selected = torch.tensor(y.clone().detach(), device=device)
+                    loss = criterion(forecast, y.to(device))  # torch.zeros(size=(16,)))
+                    #epoch_loss.append(loss)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
 
-                print("not improving since:", epochs_no_improve)
+                #mean = torch.mean(torch.stack(epoch_loss))
 
-                if mean_val1 < min_val_loss:
-                    epochs_no_improve = 0
-                    min_val_loss = mean_val1
-                    print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
-                    save(filename, model, optimizer, list(sorted_classes_numbers.keys()), leads)
-                else:
-                    epochs_no_improve += 1
+                with torch.no_grad():
+                    epoch_loss1 = []
 
-                if epoch > 10 and epochs_no_improve >= n_epochs_stop:
-                    print(f'Early stopping!-->epoch: {epoch};')
-                    required_epochs = epoch - n_epochs_stop + 1
-                    break
-                if torch.isnan(mean_val1).any():
-                    print("NaN detected, stopping")
-                    break
+                    model.eval()
+                    for x, y, rr_features, wavelet_features in validation_data_loader:
+                        x = torch.transpose(x, 1, 2)
+                        rr_features = torch.transpose(rr_features, 1, 2)
+                        wavelet_features = torch.transpose(wavelet_features, 1, 2)
 
-        del net, net_beta, model, optimizer
+                        rr_x = torch.hstack((rr_features, x))
+                        rr_wavelets = torch.hstack((rr_features, wavelet_features))
+
+                        pre_pca = torch.hstack((rr_features, x[:, ::2, :], wavelet_features))
+                        pca_features = torch.pca_lowrank(pre_pca)
+                        pca_features = torch.hstack((pca_features[0].reshape(pca_features[0].shape[0], -1), pca_features[1],
+                                                     pca_features[2].reshape(pca_features[2].shape[0], -1)))
+                        pca_features = pca_features[:, :, None]
+
+                        forecast = model(rr_x.to(device), rr_wavelets.to(device),
+                                         pca_features.to(device))  # , rr_wavelets.to(device), pca_features.to(device))
 
 
-        print("Creating NBEATS")
+                        #y_selected = torch.tensor(y.clone().detach(), device=device) # <- zmienione
+                        loss = criterion(forecast, y.to(device))
+                        epoch_loss1.append(loss)
 
-        torch.manual_seed(17)
-        net = Nbeats_alpha(input_size=len(leads),
-                           num_classes=len(selected_classes),
-                           hidden_size=7,
-                           seq_length=353,
-                           model_type='alpha',
-                           classes=selected_classes,
-                           num_layers=2)
+                    mean_val1 = torch.mean(torch.stack(epoch_loss1))
 
-        net.cuda()
+                    print_now()
+                    print("Epoch: %d Validation loss: %f" % (epoch, mean_val1))
 
-        torch.manual_seed(17)
-        net_beta = Nbeats_beta(input_size=len(leads),
-                               num_classes=len(selected_classes),
-                               hidden_size=7,
-                               seq_length=353,
-                               model_type='beta',
-                               classes=selected_classes,
-                               num_layers=2)
-        net_beta.cuda()
+                    #experiment.add_scalars(name_exp, {
+                        #'BCEWithLogitsLoss': mean,
+                        #'ValidationBCEWithLogitsLoss-only_14_classes': mean_val1,
+                   # }, epoch)
+                    print("not improving since:", epochs_no_improve)
 
-        torch.manual_seed(17)
-        model = BlendMLP(net, net_beta, selected_classes)
-        model.leads = leads
+                    if mean_val1 < min_val_loss:
+                        epochs_no_improve = 0
+                        min_val_loss = mean_val1
+                        print(f'Savining {len(leads)}-lead ECG model, epoch: {epoch}...')
+                        save(filename, model, optimizer, list(sorted_classes_numbers.keys()), leads)
+                    else:
+                        epochs_no_improve += 1
 
-        model.cuda()
+                    if epoch > 10 and epochs_no_improve >= n_epochs_stop:
+                        print(f'Early stopping!-->epoch: {epoch}; fold: {fold}')
+                        required_epochs[fold] = epoch - n_epochs_stop + 1
+                        break
+                    if torch.isnan(mean_val1).any():
+                        print("NaN detected, stopping")
+                        break
+            
+            weights_file = 'weights_eval.csv'
+            classes_eval, weights_eval = load_weights(weights_file)
+            
+            model = load_model(model_directory, leads, network, alpha_hs, alpha_layers, beta_hs, beta_layers)
 
-        optimizer = optim.Adam(model.parameters(), lr=0.01)
-        if required_epochs:
-            num_epochs = required_epochs
-        else:
-            num_epochs = 11
+            scalar_outputs = np.ndarray((len(data_training_full), 26))
+            binary_outputs = [[] for i in range(len(data_training_full))]
+            c = np.ndarray((len(data_training_full), 26))
+            times = np.zeros(len(data_training_full))
+            tmp_header_files = [header_files[i] for i in data_training_full]
+            labels = load_labels(tmp_header_files, classes_eval)
+            for i, header_index in enumerate(data_training_full):
+                header = load_header(header_files[header_index])
+                leads_local = get_leads(header)
+                recording = load_recording(recording_files[header_index])
+                c[i], binary_outputs[i], scalar_outputs[i], times[i] = run_model(model, header, recording)
+            print_now()
+            print("########################################################")
+            print(f"##### TRENING  Fold={fold}, Leads: {len(leads)}")
+            print("########################################################")
+            binary_outputs_local, scalar_outputs_local = load_classifier_outputs(binary_outputs, scalar_outputs, c, classes_eval)
+            auroc, auprc, auroc_classes, auprc_classes = compute_auc(labels, scalar_outputs)
+            print('--- TRENING AUROC, AUPRC: ', auroc, auprc) 
+            print('--- TRENING AVG peak classification time: ', np.mean(times))
+            accuracy = compute_accuracy(labels, binary_outputs_local)
+            print('--- TRENING Accuracy: ', accuracy)
 
-        for epoch in range(num_epochs):
-            local_step = 0
-            epoch_loss = []
+            f_measure, f_measure_classes = compute_f_measure(labels, binary_outputs_local)
+            print('--- TRENING F-measure: ', f_measure)
 
-            for x, y, rr_features, wavelet_features in training_data_loader:
-                x = torch.transpose(x, 1, 2)
-                rr_features = torch.transpose(rr_features, 1, 2)
-                wavelet_features = torch.transpose(wavelet_features, 1, 2)
+            sinus_rhythm = set(['426783006'])
+            challenge_metric = compute_challenge_metric(weights_eval, labels, binary_outputs_local, classes_eval,
+                                                            sinus_rhythm)
+            print('--- TRENING Challenge metric: ', challenge_metric)
+            print("########################################################")
 
-                rr_x = torch.hstack((rr_features, x))
-                rr_wavelets = torch.hstack((rr_features, wavelet_features))
 
-                pre_pca = torch.hstack((rr_features, x[:, ::2, :], wavelet_features))
-                pca_features = torch.pca_lowrank(pre_pca)
-                pca_features = torch.hstack((pca_features[0].reshape(pca_features[0].shape[0], -1), pca_features[1],
-                                             pca_features[2].reshape(pca_features[2].shape[0], -1)))
-                pca_features = pca_features[:, :, None]
+            del net, net_beta, model, optimizer
 
-                local_step += 1
-                model.train()
+            #min_mean = 100
+            #
+            #torch.manual_seed(17)
+            
+            print_now()
+            print(f"Creating {network}  -------------> HIDDEN SIZE ={alpha_hs} ")
+            print(f"Creating {network}  -------------> NUM_LAYERS = {alpha_layers} ")
+            print(f"Creating {network} BETA --------> HIDDEN_SIZE = {beta_hs}")
+            print(f"Creating {network} BETA --------> NUM_LAUERS = {beta_layers} ")
+            
+            #net, net_beta = get_network(network, alpha_hs, alpha_layers, beta_hs, beta_layers)
+            net, net_beta = get_network(network, alpha_hs, alpha_layers, beta_hs, beta_layers, leads, selected_classes, single_peak_length)
+            #if network in "GRU":
+            #    torch.manual_seed(17)
+            #    print("GRU")
+            #    net = GRU_ECG_ALPHA(input_size=len(leads),
+            #               num_classes=len(selected_classes),
+            #               hidden_size=alpha_hs,
+            #               num_layers=alpha_layers,
+            #               seq_length=single_peak_length,
+            #               model_type='alpha',
+            #               classes=selected_classes)
+            #    net.cuda()
+            #    torch.manual_seed(17)
+            #    net_beta = GRU_ECG_BETA(input_size=len(leads),
+            #                    num_classes=len(selected_classes),
+            #                    hidden_size=beta_hs,
+            #                    num_layers=beta_layers,
+            #                    seq_length=single_peak_length,
+            #                    model_type='beta',
+            #                    classes=selected_classes)
+            #    net_beta.cuda()
+ 
+            #if "LSTM_PEEPHOLE" in network:
+            #    torch.manual_seed(17)
+            #    print("LSTM_PEEPHOLE")
+            #    net = LSTMPeephole_ALPHA(input_size=len(leads),
+            #               num_classes=len(selected_classes),
+            #               hidden_size=alpha_hs,
+            #               num_layers=alpha_layers,
+            #               seq_length=single_peak_length,
+            #               model_type='alpha',
+            #               classes=selected_classes)
 
-                forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
+            #    net.cuda()
+            #    torch.manual_seed(17)
+            #    net_beta = LSTMPeephole_BETA(input_size=len(leads),
+            #                    num_classes=len(selected_classes),
+            #                    hidden_size=beta_hs,
+            #                    num_layers=beta_layers,
+            #                    seq_length=single_peak_length,
+            #                    model_type='beta',
+            #                    classes=selected_classes)
+            #    net_beta.cuda()
+           
 
-                y_selected = torch.tensor(y.clone().detach(), device=device)
-                loss = criterion(forecast, y_selected)  # torch.zeros(size=(16,)))
-                # epoch_loss.append(loss)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+            #
+            #
+            #
+            #
+            #if network in "NBEATS":
+            #    print("NBEATS")
+            #    torch.manual_seed(17)
+            #    net = Nbeats_alpha(input_size=len(leads),
+            #                   num_classes=len(selected_classes),
+            #                   hidden_size=alpha_hs,
+            #                   num_layers=alpha_layers,
+            #                   seq_length=353,
+            #                   model_type='alpha',
+            #                   classes=selected_classes)
+            #    net.cuda()
+            #    torch.manual_seed(17)
+            #    net_beta = Nbeats_beta(input_size=len(leads),
+            #                       num_classes=len(selected_classes),
+            #                       hidden_size=beta_hs,
+            #                       seq_length=353,
+            #                       model_type='beta',
+            #                       classes=selected_classes,
+            #                       num_layers=beta_layers)
+            #    net_beta.cuda()
+            #    torch.manual_seed(17)
+           
 
-            print(f'Savining {len(leads)}-lead ECG model, score: mean, epoch: {epoch}...')
-            save(filename, model, optimizer, list(sorted_classes_numbers.keys()), leads)
+            #if network in "LSTM":
+            #    torch.manual_seed(17)
+            #    print("LSTM")
+            #    net = LSTM_ECG(input_size=len(leads),
+            #               num_classes=len(selected_classes),
+            #               hidden_size=alpha_hs,
+            #               num_layers=alpha_layers,
+            #               seq_length=single_peak_length,
+            #               model_type='alpha',
+            #               classes=selected_classes)
 
+            #    net.cuda()
+            #    torch.manual_seed(17)
+            #    net_beta = LSTM_ECG(input_size=len(leads),
+            #                    num_classes=len(selected_classes),
+            #                    hidden_size=beta_hs,
+            #                    num_layers=beta_layers,
+            #                    seq_length=single_peak_length,
+            #                    model_type='beta',
+            #                    classes=selected_classes)
+            #    net_beta.cuda()
+            
+            #print("LSTM_PEEPHOLE")
+            #net = LSTMPeephole_ALPHA(input_size=len(leads),
+            #           num_classes=len(selected_classes),
+            #           hidden_size=7,
+            #           num_layers=2,
+            #           seq_length=single_peak_length,
+            #           model_type='alpha',
+            #           classes=selected_classes)
+
+            #net.cuda()
+            #torch.manual_seed(17)
+            #net_beta = LSTMPeephole_BETA(input_size=len(leads),
+            #                num_classes=len(selected_classes),
+            #                hidden_size=7,
+            #                num_layers=2,
+            #                seq_length=single_peak_length,
+            #                model_type='beta',
+            #                classes=selected_classes)
+            #net_beta.cuda()
+           
+
+            #torch.manual_seed(17)
+            #print("GRU")
+            #net = GRU_ECG_ALPHA(input_size=len(leads),
+            #           num_classes=len(selected_classes),
+            #           hidden_size=7,
+            #           num_layers=2,
+            #           seq_length=single_peak_length,
+            #           model_type='alpha',
+            #           classes=selected_classes)
+
+            #net.cuda()
+            #torch.manual_seed(17)
+            #net_beta = GRU_ECG_BETA(input_size=len(leads),
+            #                num_classes=len(selected_classes),
+            #                hidden_size=7,
+            #                num_layers=2,
+            #                seq_length=single_peak_length,
+            #                model_type='beta',
+            #                classes=selected_classes)
+            #net_beta.cuda()
+           
+           
+            #torch.manual_seed(17)
+            #print("LSTM")
+            #net = LSTM_ECG(input_size=len(leads),
+            #           num_classes=len(selected_classes),
+            #           hidden_size=7,
+            #           num_layers=2,
+            #           seq_length=single_peak_length,
+            #           model_type='alpha',
+            #           classes=selected_classes)
+            #net.cuda()
+            #torch.manual_seed(17)
+            #net_beta = LSTM_ECG(input_size=len(leads),
+            #                num_classes=len(selected_classes),
+            #                hidden_size=7,
+            #                num_layers=2,
+            #                seq_length=single_peak_length,
+            #                model_type='beta',
+            #                classes=selected_classes)
+            #net_beta.cuda()
+            
+            #print("Creating NBEATS")
+
+            #torch.manual_seed(17)
+            #net = Nbeats_alpha(input_size=len(leads),
+            #               num_classes=len(selected_classes),
+            #               hidden_size=7,
+            #               seq_length=353,
+            #               model_type='alpha',
+            #               classes=selected_classes,
+            #               num_layers=2)
+            #net.cuda()
+
+            #torch.manual_seed(17)
+            #net_beta = Nbeats_beta(input_size=len(leads),
+            #                   num_classes=len(selected_classes),
+            #                   hidden_size=7,
+            #                   seq_length=353,
+            #                   model_type='beta',
+            #                   classes=selected_classes,
+            #                   num_layers=2)
+            #net_beta.cuda()
+
+
+            torch.manual_seed(17)
+            model = BlendMLP(net, net_beta, selected_classes)
+            model.leads=leads
+            #checkpoint = torch.load(filename, map_location=torch.device('cuda:0'))
+            #model.load_state_dict(checkpoint['model_state_dict'])
+            model.cuda()
+
+            optimizer = optim.Adam(model.parameters(), lr=0.01)
+            if fold in required_epochs:
+                num_epochs = required_epochs[fold]
+            else:
+                num_epochs = 6
+
+            for epoch in range(num_epochs):
+                local_step = 0
+                epoch_loss = []
+
+                for x, y, rr_features, wavelet_features in training_data_loader:
+                    x = torch.transpose(x, 1, 2)
+                    rr_features = torch.transpose(rr_features, 1, 2)
+                    wavelet_features = torch.transpose(wavelet_features, 1, 2)
+
+                    rr_x = torch.hstack((rr_features, x))
+                    rr_wavelets = torch.hstack((rr_features, wavelet_features))
+
+                    pre_pca = torch.hstack((rr_features, x[:, ::2, :], wavelet_features))
+                    pca_features = torch.pca_lowrank(pre_pca)
+                    pca_features = torch.hstack((pca_features[0].reshape(pca_features[0].shape[0], -1), pca_features[1],
+                                                 pca_features[2].reshape(pca_features[2].shape[0], -1)))
+                    pca_features = pca_features[:, :, None]
+
+                    local_step += 1
+                    model.train()
+
+                    forecast = model(rr_x.to(device), rr_wavelets.to(device), pca_features.to(device))
+
+                    y_selected = torch.tensor(y.clone().detach(), device=device)
+                    loss = criterion(forecast, y_selected)  # torch.zeros(size=(16,)))
+                   # epoch_loss.append(loss)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+                #mean = torch.mean(torch.stack(epoch_loss))
+                #if mean < min_mean:
+                    #min_mean = mean
+                print(f'Savining {len(leads)}-lead ECG model, score: mean, epoch: {epoch}...')
+                save(filename, model, optimizer, list(sorted_classes_numbers.keys()), leads)
+                #del mean
+                #del epoch_loss
+            weights_file = 'weights_eval.csv'
+            classes_eval, weights_eval = load_weights(weights_file)
+
+            scalar_outputs = np.ndarray((len(data_test), 26))
+            binary_outputs = [[] for i in range(len(data_test))]
+            c = np.ndarray((len(data_test), 26))
+            times = np.zeros(len(data_test))
+            tmp_header_files = [header_files[i] for i in data_test]
+            labels = load_labels(tmp_header_files, classes_eval)
+            for i, header_index in enumerate(data_test):
+                header = load_header(header_files[header_index])
+                leads_local = get_leads(header)
+                recording = load_recording(recording_files[header_index])
+                c[i], binary_outputs[i], scalar_outputs[i], times[i] = run_model(model, header, recording)
+            print_now() 
+            print("########################################################")
+            print(f"#####   Fold={fold}, Leads: {len(leads)}")
+            print("########################################################")
+            binary_outputs_local, scalar_outputs_local = load_classifier_outputs(binary_outputs, scalar_outputs, c, classes_eval)
+            auroc, auprc, auroc_classes, auprc_classes = compute_auc(labels, scalar_outputs)
+            print('--- AUROC, AUPRC: ', auroc, auprc) 
+            print('--- AVG peak classification time: ', np.mean(times))
+            accuracy = compute_accuracy(labels, binary_outputs_local)
+            print('--- Accuracy: ', accuracy)
+
+            f_measure, f_measure_classes = compute_f_measure(labels, binary_outputs_local)
+            print('--- F-measure: ', f_measure)
+
+            sinus_rhythm = set(['426783006'])
+            challenge_metric = compute_challenge_metric(weights_eval, labels, binary_outputs_local, classes_eval,
+                                                            sinus_rhythm)
+            print('--- Challenge metric: ', challenge_metric)
+            print("########################################################")
+            del model, net, net_beta
+
+            classes_numbers = dict(zip(['6374002', '10370003', '17338001', '39732003', '47665007', '59118001', '59931005',
+                                '111975006', '164889003', '164890007', '164909002', '164917005', '164934002',
+                                '164947007', '251146004', '270492004', '284470004', '365413008', '426177001', '426627000',
+                                '426783006', '427084000', '427393009', '445118002', '698252002', '713426002'], [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]))
+            ################################################################################
 #
 # File I/O functions
 #
 ################################################################################
 # create HDF5 datase
 
+def get_network(network, alpha_hs, alpha_layers, beta_hs, beta_layers, leads, selected_classes, single_peak_length):
+    if network in "GRU":
+        torch.manual_seed(17)
+        print("GRU")
+        net = GRU_ECG_ALPHA(input_size=len(leads),
+                   num_classes=len(selected_classes),
+                   hidden_size=alpha_hs,
+                   num_layers=alpha_layers,
+                   seq_length=single_peak_length,
+                   model_type='alpha',
+                   classes=selected_classes)
+        net.cuda()
+        torch.manual_seed(17)
+        net_beta = GRU_ECG_BETA(input_size=len(leads),
+                        num_classes=len(selected_classes),
+                        hidden_size=beta_hs,
+                        num_layers=beta_layers,
+                        seq_length=single_peak_length,
+                        model_type='beta',
+                        classes=selected_classes)
+        net_beta.cuda()
+
+    if "LSTM_PEEPHOLE" in network:
+        torch.manual_seed(17)
+        print("LSTM_PEEPHOLE")
+        net = LSTMPeephole_ALPHA(input_size=len(leads),
+                   num_classes=len(selected_classes),
+                   hidden_size=alpha_hs,
+                   num_layers=alpha_layers,
+                   seq_length=single_peak_length,
+                   model_type='alpha',
+                   classes=selected_classes)
+
+        net.cuda()
+        torch.manual_seed(17)
+        net_beta = LSTMPeephole_BETA(input_size=len(leads),
+                        num_classes=len(selected_classes),
+                        hidden_size=beta_hs,
+                        num_layers=beta_layers,
+                        seq_length=single_peak_length,
+                        model_type='beta',
+                        classes=selected_classes)
+        net_beta.cuda()
+   
+
+    
+    
+    
+    
+    if network in "NBEATS":
+        print("NBEATS")
+        torch.manual_seed(17)
+        net = Nbeats_alpha(input_size=len(leads),
+                       num_classes=len(selected_classes),
+                       hidden_size=alpha_hs,
+                       num_layers=alpha_layers,
+                       seq_length=353,
+                       model_type='alpha',
+                       classes=selected_classes)
+        net.cuda()
+        torch.manual_seed(17)
+        net_beta = Nbeats_beta(input_size=len(leads),
+                           num_classes=len(selected_classes),
+                           hidden_size=beta_hs,
+                           seq_length=353,
+                           model_type='beta',
+                           classes=selected_classes,
+                           num_layers=beta_layers)
+        net_beta.cuda()
+        torch.manual_seed(17)
+   
+
+    if network in "LSTM":
+        torch.manual_seed(17)
+        print("LSTM")
+        net = LSTM_ECG(input_size=len(leads),
+                   num_classes=len(selected_classes),
+                   hidden_size=alpha_hs,
+                   num_layers=alpha_layers,
+                   seq_length=single_peak_length,
+                   model_type='alpha',
+                   classes=selected_classes)
+
+        net.cuda()
+        torch.manual_seed(17)
+        net_beta = LSTM_ECG(input_size=len(leads),
+                        num_classes=len(selected_classes),
+                        hidden_size=beta_hs,
+                        num_layers=beta_layers,
+                        seq_length=single_peak_length,
+                        model_type='beta',
+                        classes=selected_classes)
+        net_beta.cuda()
+
+    return net, net_beta
+
+
+
+
 def calculate_pos_weights(class_counts):
     all_counts = sum(class_counts)
-    neg_counts = [all_counts - pos_count for pos_count in class_counts]
-    pos_weights = [neg_count / (pos_count + 1e-5) for (pos_count, neg_count) in zip(class_counts, neg_counts)]
+    neg_counts = [all_counts-pos_count for pos_count in class_counts]
+    pos_weights = [neg_count / (pos_count + 1e-5) for (pos_count, neg_count) in  zip(class_counts,  neg_counts)]
     return torch.as_tensor(pos_weights, dtype=torch.float, device=device)
-
 
 def create_hdf5_db(num_recordings, num_classes, header_files, recording_files, classes, leads, isTraining=1,
                    selected_classes=[], filename=None):
@@ -522,7 +968,7 @@ def save(checkpoint_name, model, optimiser, classes, leads):
 # Load your trained 12-lead ECG model. This function is *required*. Do *not* change the arguments of this function.
 
 # Generic function for loading a model.
-def load_model(model_directory, leads):
+def load_model(model_directory, leads, network, alpha_hs, alpha_layers, beta_hs, beta_layers):
     torch.cuda.set_device(0)
 
     filename = os.path.join(model_directory, get_model_filename(leads))
@@ -530,21 +976,22 @@ def load_model(model_directory, leads):
 
     # model = LSTM_ECG(device, single_peak_length, len(checkpoint["classes"]), hidden_dim=1256, classes=checkpoint["classes"], leads=leads)
 
-    net = Nbeats_alpha(input_size=len(leads),
-                       num_classes=len(checkpoint['classes']),
-                       hidden_size=7,
-                       seq_length=353,
-                       model_type='alpha',
-                       classes=checkpoint['classes'],
-                       num_layers=2)
+    net, net_beta = get_network(network, alpha_hs, alpha_layers, beta_hs, beta_layers, checkpoint["leads"], checkpoint["classes"], 353)
+    #net = Nbeats_alpha(input_size=len(leads),
+    #                   num_classes=len(checkpoint['classes']),
+    #                   hidden_size=3,
+    #                   seq_length=353,
+    #                   model_type='alpha',
+    #                   classes=checkpoint['classes'],
+    #                   num_layers=1)
 
-    net_beta = Nbeats_beta(input_size=len(leads),
-                           num_classes=len(checkpoint['classes']),
-                           hidden_size=7,
-                           seq_length=353,
-                           model_type='beta',
-                           classes=checkpoint['classes'],
-                           num_layers=2)
+    #net_beta = Nbeats_beta(input_size=len(leads),
+    #                       num_classes=len(checkpoint['classes']),
+    #                       hidden_size=1,
+    #                       seq_length=353,
+    #                       model_type='beta',
+    #                       classes=checkpoint['classes'],
+    #                       num_layers=1)
     model = BlendMLP(net, net_beta, checkpoint["classes"])
 
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -577,7 +1024,8 @@ def run_model(model, header, recording):
     if len(x_features) == 0:
         labels = np.zeros(len(classes))
         probabilities_mean = np.zeros(len(classes))
-        return classes, labels, probabilities_mean#, 0
+        labels=probabilities_mean > 0.5
+        return classes, labels, probabilities_mean, 0
     else:
         x = torch.transpose(x_features, 1, 2)
         rr_features = torch.transpose(rr_features, 1, 2)
@@ -600,19 +1048,17 @@ def run_model(model, header, recording):
             del rr_x, rr_wavelets, rr_features, x, pca_features, pre_pca
             probabilities = nn.functional.sigmoid(scores)
             probabilities_mean = torch.mean(probabilities, 0).detach().cpu().numpy()
-            # labels = np.zeros(len(probabilities_mean), type=np.bool)
-            thresholds_per_class = [0.92912185, 0.99383825, 0.9807903, 0.8201744, 0.84914022, 0.80809229, 0.7739887,
-                                    0.983991, 0.7987251, 0.9289746, 0.98765594, 0.85153157, 0.9495117, 0.76390505,
-                                    0.72608936, 0.84350013, 0.91662383, 0.9896282, 0.90384232, 0.8161232, 0.8286067,
-                                    0.7592844, 0.67744523, 0.66565263, 0.9370738, 0.7162824]
+          # labels = np.zeros(len(probabilities_mean), type=np.bool)
+            thresholds_per_class = [0.92912185, 0.99383825, 0.9807903,  0.8201744,  0.84914022, 0.80809229,0.7739887,  0.983991,   0.7987251,  0.9289746,  0.98765594, 0.85153157,0.9495117,  0.76390505, 0.72608936, 0.84350013, 0.91662383, 0.9896282, 0.90384232, 0.8161232, 0.8286067, 0.7592844, 0.67744523, 0.66565263,0.9370738 ,0.7162824 ]
             labels = probabilities_mean > 0.5
-            # for i, thr in enumerate(thresholds_per_class):
+            #for i, thr in enumerate(thresholds_per_class):
             #    if probabilities_mean[i] > thr:
             #        labels[i] = 1
             #    else:
             #        labels[i] = 0
 
-            return classes, labels, probabilities_mean#, peak_time
+
+            return classes, labels, probabilities_mean, peak_time
 
 
 # Define the filename(s) for the trained models. This function is not required. You can change or remove it.
@@ -831,3 +1277,9 @@ def panPeakDetect(detection, fs):
     signal_peaks.pop(0)
 
     return signal_peaks
+
+
+def print_now():
+    t = time.localtime()
+    current_time = time.strftime("%H:%M:%S", t)
+    print(current_time)
